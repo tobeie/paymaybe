@@ -1,0 +1,169 @@
+name: Deploy PayMaybe to Solana Devnet & Run Milestone 0 Probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_probe:
+        description: "Run live Milestone 0 Devnet + MagicBlock ER/VRF probe after deploy"
+        required: false
+        default: true
+        type: boolean
+      sync_idl:
+        description: "Commit generated pay_maybe.json IDL into frontend/src/idl and client/src/idl"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-and-probe:
+    name: Build, Sync IDL, Deploy to Devnet & Run Milestone 0 Probe
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Linux System Dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential libudev-dev
+
+      - name: Install Rust 1.89
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.89.0
+
+      - name: Cache Cargo Registry and Target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-anchor-1.0.2-${{ hashFiles('programs/**/Cargo.toml', 'Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-anchor-1.0.2-
+
+      - name: Install Solana (Agave 3.1.9)
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v3.1.9/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install Prebuilt Anchor 1.0.2 Binary
+        run: |
+          sudo curl -sSfL "https://github.com/solana-foundation/anchor/releases/download/v1.0.2/anchor-1.0.2-x86_64-unknown-linux-gnu" -o /usr/local/bin/anchor
+          sudo chmod +x /usr/local/bin/anchor
+
+      - name: Prepare Program Keypair & Build Program (.so + IDL)
+        run: |
+          mkdir -p ~/.config/solana target/deploy
+          cp programs/pay-maybe/pay_maybe-keypair.json target/deploy/pay_maybe-keypair.json
+          if [ ! -f ~/.config/solana/id.json ]; then
+            solana-keygen new --no-bip39-passphrase -o ~/.config/solana/id.json --force
+          fi
+          solana config set --url devnet
+          anchor build
+          ls -lh target/deploy/pay_maybe.so target/idl/pay_maybe.json
+
+      - name: Sync Generated IDL to Frontend & Client
+        if: ${{ inputs.sync_idl != false }}
+        run: |
+          mkdir -p frontend/src/idl client/src/idl
+          cp target/idl/pay_maybe.json frontend/src/idl/pay_maybe.json
+          cp target/idl/pay_maybe.json client/src/idl/pay_maybe.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/idl/pay_maybe.json client/src/idl/pay_maybe.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: sync compiled Anchor 1.0.2 IDL (pay_maybe.json)"
+            git push origin HEAD:main
+          else
+            echo "IDL already up to date."
+          fi
+
+      - name: Upload Compiled Program (.so) & IDL
+        uses: actions/upload-artifact@v4
+        with:
+          name: pay_maybe-devnet-artifacts
+          path: |
+            target/deploy/pay_maybe.so
+            target/idl/pay_maybe.json
+
+      - name: Setup Devnet Deployer Wallet & Fund via Airdrop
+        id: wallet
+        env:
+          DEVNET_DEPLOYER_KEYPAIR: ${{ secrets.DEVNET_DEPLOYER_KEYPAIR }}
+        run: |
+          mkdir -p ~/.config/solana
+          if [ -n "$DEVNET_DEPLOYER_KEYPAIR" ]; then
+            echo "$DEVNET_DEPLOYER_KEYPAIR" > ~/.config/solana/id.json
+            echo "Using DEVNET_DEPLOYER_KEYPAIR from GitHub Secrets."
+          else
+            solana-keygen new --no-bip39-passphrase -o ~/.config/solana/id.json --force
+            echo "Generated ephemeral Devnet deployer wallet."
+          fi
+
+          PUBKEY=$(solana-keygen pubkey ~/.config/solana/id.json)
+          echo "pubkey=$PUBKEY" >> $GITHUB_OUTPUT
+          echo "Deployer Pubkey: $PUBKEY"
+
+          BALANCE=$(solana balance "$PUBKEY" --url devnet | awk '{print $1}')
+          echo "Initial balance: $BALANCE SOL"
+
+          # Request Devnet SOL airdrops until we have >= 3.2 SOL (with retries)
+          for attempt in 1 2 3 4; do
+            ENOUGH=$(awk -v b="$BALANCE" 'BEGIN { print (b >= 3.2) ? 1 : 0 }')
+            if [ "$ENOUGH" -eq 1 ]; then
+              break
+            fi
+            echo "Airdrop attempt $attempt (2 SOL)..."
+            solana airdrop 2 "$PUBKEY" --url devnet || true
+            sleep 5
+            BALANCE=$(solana balance "$PUBKEY" --url devnet | awk '{print $1}')
+            echo "Balance after attempt $attempt: $BALANCE SOL"
+          done
+
+          ENOUGH=$(awk -v b="$BALANCE" 'BEGIN { print (b >= 2.5) ? 1 : 0 }')
+          echo "funded=$ENOUGH" >> $GITHUB_OUTPUT
+          echo "balance=$BALANCE" >> $GITHUB_OUTPUT
+
+      - name: Deploy pay_maybe.so to Solana Devnet
+        id: deploy
+        if: steps.wallet.outputs.funded == '1'
+        run: |
+          PROGRAM_ID=$(solana-keygen pubkey target/deploy/pay_maybe-keypair.json)
+          echo "Deploying Program ID: $PROGRAM_ID"
+          solana program deploy target/deploy/pay_maybe.so \
+            --program-id target/deploy/pay_maybe-keypair.json \
+            --keypair ~/.config/solana/id.json \
+            --url devnet
+          echo "program_id=$PROGRAM_ID" >> $GITHUB_OUTPUT
+          solana program show "$PROGRAM_ID" --url devnet
+
+      - name: Run Live Milestone 0 Devnet + MagicBlock ER/VRF Probe
+        if: steps.wallet.outputs.funded == '1' && inputs.run_probe != false
+        working-directory: client
+        env:
+          PROGRAM_ID: BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX
+          PAYER_KEYPAIR_PATH: /home/runner/.config/solana/id.json
+        run: |
+          npm install --legacy-peer-deps
+          npm run probe
+
+      - name: Write Deployment Summary
+        if: always()
+        run: |
+          echo "## PayMaybe Devnet Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Program ID:** \`BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Explorer:** https://explorer.solana.com/address/BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX?cluster=devnet" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployer Wallet:** \`${{ steps.wallet.outputs.pubkey }}\` (${{ steps.wallet.outputs.balance }} SOL)" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.wallet.outputs.funded }}" != "1" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> ⚠️ **Devnet Faucet Rate-Limited:** The public Solana Devnet faucet rate-limited GitHub's runner IP (got ${{ steps.wallet.outputs.balance }} SOL; need ~3 SOL to deploy). Add a funded Devnet keypair JSON array as GitHub Secret \`DEVNET_DEPLOYER_KEYPAIR\` (Settings → Secrets → Actions) and re-run this workflow!" >> $GITHUB_STEP_SUMMARY
+          fi
