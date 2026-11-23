@@ -1,7 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 
-// Program IDs — update after anchor deploy
-export const PROGRAM_ID = new PublicKey("PLACEHOLDER111111111111111111111111111111111");
+// Program ID — matches target/deploy/pay_maybe-keypair.json
+export const PROGRAM_ID = new PublicKey("BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX");
 export const DELEGATION_PROGRAM_ID = new PublicKey("DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh");
 export const PERMISSION_PROGRAM_ID = new PublicKey("ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1");
 export const VRF_PROGRAM_ID = new PublicKey("Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz");
@@ -21,7 +21,7 @@ export const TEE_ENDPOINT = "https://devnet-tee.magicblock.app";
 
 // Economics
 export const SHARD_VALUE_LAMPORTS = 100n;
-export const PROTOCOL_FEE_BPS = 1000; // 10% surcharge
+export const PROTOCOL_FEE_BPS = 1000;
 
 // Rebate tiers
 export const TIER_FREE = 10000;

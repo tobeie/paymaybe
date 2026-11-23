@@ -1,7 +1,12 @@
 "use client";
+import dynamic from "next/dynamic";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { ITEMS, ODDS_DISPLAY } from "../lib/constants";
+
+const WalletMultiButtonDynamic = dynamic(
+  async () => (await import("@solana/wallet-adapter-react-ui")).WalletMultiButton,
+  { ssr: false }
+);
 
 interface Props {
   onBuy: (itemId: number) => void;
@@ -12,7 +17,6 @@ export function StorefrontSection({ onBuy }: Props) {
 
   return (
     <section>
-      {/* Odds banner */}
       <div className="mb-8 p-4 bg-pm-surface border border-pm-border rounded-xl flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-pm-text">Every purchase includes a private spin</p>
@@ -26,31 +30,26 @@ export function StorefrontSection({ onBuy }: Props) {
         </div>
       </div>
 
-      {/* Item grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {ITEMS.map((item) => (
           <div
             key={item.id}
             className="group bg-pm-card border border-pm-border rounded-2xl p-5 flex flex-col gap-4 hover:border-pm-gold/40 transition-all duration-200 hover:shadow-lg hover:shadow-pm-gold/5"
           >
-            {/* Emoji */}
             <div className="w-14 h-14 rounded-xl bg-pm-surface flex items-center justify-center text-3xl">
               {item.emoji}
             </div>
 
-            {/* Info */}
             <div className="flex-1">
               <h3 className="font-semibold text-pm-text">{item.name}</h3>
               <p className="text-xs text-pm-muted mt-1 leading-relaxed">{item.description}</p>
             </div>
 
-            {/* Price */}
             <div className="flex items-baseline gap-1">
               <span className="text-xl font-bold text-pm-text">{item.priceDisplay}</span>
               <span className="text-xs text-pm-muted">on Devnet</span>
             </div>
 
-            {/* Buy button */}
             {connected ? (
               <button
                 onClick={() => onBuy(item.id)}
@@ -61,14 +60,13 @@ export function StorefrontSection({ onBuy }: Props) {
             ) : (
               <div className="text-center">
                 <p className="text-xs text-pm-muted mb-2">Connect wallet to buy</p>
-                <WalletMultiButton className="!w-full !justify-center !text-sm" />
+                <WalletMultiButtonDynamic className="!w-full !justify-center !text-sm" />
               </div>
             )}
           </div>
         ))}
       </div>
 
-      {/* How it works */}
       <div className="mt-10 p-6 bg-pm-surface border border-pm-border rounded-2xl">
         <h3 className="text-sm font-semibold text-pm-text mb-4">How PayMaybe works</h3>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">

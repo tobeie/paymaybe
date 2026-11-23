@@ -2,8 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
 :root {
   --pm-bg: #0f0e0d;
   --pm-surface: #1a1917;
@@ -20,7 +18,7 @@ html { scroll-behavior: smooth; }
 body {
   background-color: var(--pm-bg);
   color: var(--pm-text);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -28,7 +26,7 @@ body {
   background: var(--pm-card) !important;
   border: 1px solid var(--pm-border) !important;
   color: var(--pm-text) !important;
-  font-family: 'Inter', sans-serif !important;
+  font-family: inherit !important;
   border-radius: 8px !important;
   font-size: 14px !important;
   height: 40px !important;

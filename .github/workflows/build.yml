@@ -1,4 +1,4 @@
-name: PayMaybe Build (Anchor & Solana)
+name: PayMaybe CI (Anchor Program + Frontend)
 
 on:
   push:
@@ -8,40 +8,72 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-program:
-    name: Build Anchor On-Chain Program
+  build-frontend:
+    name: Verify Next.js Frontend Build
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
-      - name: Setup Anchor & Solana Environment
-        uses: metadaoproject/setup-anchor@v3.3
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm install --legacy-peer-deps
+
+      - name: Build Next.js Frontend
+        working-directory: frontend
+        run: npm run build
+
+  build-program:
+    name: Build Anchor On-Chain Program (Agave 3.1.9 + Anchor 1.0.2)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Linux System Dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential libudev-dev
+
+      - name: Install Rust 1.89
+        uses: dtolnay/rust-toolchain@master
         with:
-          anchor-version: "0.30.1"
-          solana-version: "1.18.26"
+          toolchain: 1.89.0
 
-      - name: Verify Versions
+      - name: Install Solana (Agave 3.1.9)
         run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v3.1.9/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install Prebuilt Anchor 1.0.2 Binary
+        run: |
+          sudo curl -sSfL "https://github.com/solana-foundation/anchor/releases/download/v1.0.2/anchor-1.0.2-x86_64-unknown-linux-gnu" -o /usr/local/bin/anchor
+          sudo chmod +x /usr/local/bin/anchor
+
+      - name: Configure Ephemeral Keypair and Program Keypair
+        run: |
+          solana-keygen new --no-bip39-passphrase --force
+          solana config set --url devnet
+          mkdir -p target/deploy
+          cp programs/pay-maybe/pay_maybe-keypair.json target/deploy/pay_maybe-keypair.json
+          rustc --version
           solana --version
           anchor --version
 
-      - name: Build Anchor Program
-        run: |
-          anchor build
+      - name: Build Anchor Program (.so + IDL)
+        run: anchor build
 
       - name: Upload Compiled Program (.so)
         uses: actions/upload-artifact@v4
         with:
           name: pay_maybe-program-binary
           path: target/deploy/pay_maybe.so
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Upload Program IDL (JSON)
         uses: actions/upload-artifact@v4

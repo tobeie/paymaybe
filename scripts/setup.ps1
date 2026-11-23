@@ -110,15 +110,19 @@ if (Get-Command solana -ErrorAction SilentlyContinue) {
 
 # --- STEP 4: Anchor CLI ---
 Step 4 "Checking Anchor CLI 1.0.2"
+$anchorBinDir = "$env:USERPROFILE\.cargo\bin"
+if (Test-Path $anchorBinDir) { $env:PATH = "$anchorBinDir;$env:PATH" }
 if (Get-Command anchor -ErrorAction SilentlyContinue) {
     OK "Anchor found: $(anchor --version)"
 } else {
-    INFO "Installing Anchor 1.0.2 via cargo (this takes 10-15 minutes, please wait)..."
-    cargo install --git https://github.com/coral-xyz/anchor anchor-cli --tag v1.0.2 --locked
+    INFO "Downloading prebuilt Anchor 1.0.2 Windows binary (no compilation needed)..."
+    if (!(Test-Path $anchorBinDir)) { New-Item -ItemType Directory -Path $anchorBinDir -Force | Out-Null }
+    $anchorExe = "$anchorBinDir\anchor.exe"
+    curl.exe -L -sSf -o $anchorExe "https://github.com/solana-foundation/anchor/releases/download/v1.0.2/anchor-1.0.2-x86_64-pc-windows-msvc.exe"
     if (Get-Command anchor -ErrorAction SilentlyContinue) {
         OK "Anchor installed: $(anchor --version)"
     } else {
-        ERR "Anchor install failed. Check cargo output above."
+        ERR "Anchor download failed."
         exit 1
     }
 }

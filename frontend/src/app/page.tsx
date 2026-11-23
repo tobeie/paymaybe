@@ -1,11 +1,16 @@
 "use client";
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { StorefrontSection } from "../components/StorefrontSection";
 import { SpinModal } from "../components/SpinModal";
 import { VaultDrawer } from "../components/VaultDrawer";
 import { usePayMaybe } from "../hooks/usePayMaybe";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { ITEMS } from "../lib/constants";
+
+const WalletMultiButtonDynamic = dynamic(
+  async () => (await import("@solana/wallet-adapter-react-ui")).WalletMultiButton,
+  { ssr: false }
+);
 
 export default function Home() {
   const [showVault, setShowVault] = useState(false);
@@ -29,7 +34,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-pm-bg">
-      {/* Header */}
       <header className="border-b border-pm-border bg-pm-surface/80 backdrop-blur-sm sticky top-0 z-30">
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -45,12 +49,11 @@ export default function Home() {
             >
               Vault 🏦
             </button>
-            <WalletMultiButton />
+            <WalletMultiButtonDynamic />
           </div>
         </div>
       </header>
 
-      {/* Hero */}
       <div className="max-w-5xl mx-auto px-6 pt-16 pb-8 text-center">
         <div className="inline-flex items-center gap-2 bg-pm-card border border-pm-border rounded-full px-4 py-1.5 text-xs text-pm-muted mb-6">
           <span className="w-1.5 h-1.5 bg-pm-success rounded-full animate-pulse" />
@@ -60,16 +63,14 @@ export default function Home() {
           Buy Now, <span className="text-pm-gold">Pay Maybe</span>
         </h1>
         <p className="text-pm-muted text-lg max-w-xl mx-auto">
-          Every checkout gives you an instant, provably fair chance to pay nothing — 
+          Every checkout gives you an instant, provably fair chance to pay nothing —
           privately inside a MagicBlock Ephemeral Rollup.
         </p>
       </div>
 
-      {/* Main content */}
       <main className="max-w-5xl mx-auto px-6 pb-24">
         <StorefrontSection onBuy={handleBuy} />
 
-        {/* Error display */}
         {state.error && (
           <div className="mt-6 p-4 bg-pm-error/10 border border-pm-error/30 rounded-xl text-pm-error text-sm">
             ⚠️ {state.error}
@@ -77,7 +78,6 @@ export default function Home() {
         )}
       </main>
 
-      {/* Modals */}
       {showModal && selectedItem && (
         <SpinModal
           isOpen={showModal}
@@ -89,7 +89,9 @@ export default function Home() {
           txSigs={state.txSigs}
           privacyProof={state.privacyProof}
           result={state.result}
-          onVerifyPrivacy={() => {/* verifyPrivacy called inside hook */}}
+          onVerifyPrivacy={() => {
+            void verifyPrivacy();
+          }}
         />
       )}
 
