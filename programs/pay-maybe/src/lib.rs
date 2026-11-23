@@ -4,7 +4,7 @@ use ephemeral_rollups_sdk::anchor::{commit, delegate, ephemeral, vrf, vrf_callba
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
 use ephemeral_rollups_sdk::ephem::MagicIntentBundleBuilder;
 use ephemeral_rollups_sdk::vrf::instructions::{
-    create_request_scoped_randomness_ix, RequestRandomnessParams,
+    create_request_randomness_ix, RequestRandomnessParams,
 };
 use ephemeral_rollups_sdk::vrf::types::SerializableAccountMeta;
 
@@ -42,7 +42,7 @@ pub mod pay_maybe {
 
         if rebate_seed_lamports > 0 {
             let cpi_ctx = CpiContext::new(
-                ctx.accounts.system_program.to_account_info(),
+                ctx.accounts.system_program.key(),
                 Transfer {
                     from: ctx.accounts.authority.to_account_info(),
                     to: ctx.accounts.store_vault.to_account_info(),
@@ -92,7 +92,7 @@ pub mod pay_maybe {
         );
 
         let cpi_ctx = CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
+            ctx.accounts.system_program.key(),
             Transfer {
                 from: ctx.accounts.buyer.to_account_info(),
                 to: ctx.accounts.store_vault.to_account_info(),
@@ -150,7 +150,7 @@ pub mod pay_maybe {
 
     /// Instruction 4 (MagicBlock ER / L1 VRF): Requests verifiable randomness from MagicBlock VRF.
     pub fn request_spin(ctx: Context<RequestSpin>, client_seed: [u8; 32]) -> Result<()> {
-        let ix = create_request_scoped_randomness_ix(RequestRandomnessParams {
+        let ix = create_request_randomness_ix(RequestRandomnessParams {
             payer: ctx.accounts.buyer.key(),
             oracle_queue: ctx.accounts.oracle_queue.key(),
             callback_program_id: crate::ID,
