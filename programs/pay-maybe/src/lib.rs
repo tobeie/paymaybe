@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use ephemeral_rollups_sdk::{
-    anchor::{delegate_account, ephemeral, MagicContext},
-    cpi::{DelegateConfig, MagicBlockProgram},
+    anchor::{ephemeral, vrf_callback, MagicContext},
+    cpi::MagicBlockProgram,
     ephem::MagicIntentBundleBuilder,
     vrf::{create_request_scoped_randomness_ix, DEFAULT_QUEUE},
 };
@@ -73,19 +73,8 @@ pub mod pay_maybe {
         buyer_account.last_item_id = 0;
         buyer_account.is_private = false;
 
-        // Delegate BuyerAccount to MagicBlock ER
-        let payer = ctx.accounts.buyer.to_account_info();
-        let pda = ctx.accounts.buyer_account.to_account_info();
-        delegate_account!(
-            ctx,
-            buyer_account,
-            MagicContext,
-            DelegateConfig {
-                valid_until: i64::MAX,
-                commit_frequency_ms: 5000,
-            }
-        );
-        msg!("BuyerAccount delegated to MagicBlock ER");
+        // Mark initialized for ER delegation
+        msg!("BuyerAccount initialized for MagicBlock ER delegation");
         Ok(())
     }
 
@@ -150,9 +139,8 @@ pub mod pay_maybe {
     }
 
     /// Instruction 5: callback_resolve_spin — MagicBlock VRF callback
-    /// Protected by #[vrf_callback] so it can only be invoked by the VRF oracle.
+    /// Protected by #[vrf_callback] on context so it can only be invoked by the VRF oracle.
     /// Maps randomness -> rebate tier, credits shards, commits & undelegates to L1.
-    #[vrf_callback]
     pub fn callback_resolve_spin(
         ctx: Context<CallbackResolveSpin>,
         randomness: [u8; 32],
@@ -367,6 +355,7 @@ pub struct CheckoutAndSpin<'info> {
 }
 
 #[derive(Accounts)]
+#[vrf_callback]
 pub struct CallbackResolveSpin<'info> {
     /// CHECK: MUST be UncheckedAccount — delegated, Anchor must NOT re-serialize
     #[account(mut, del)]

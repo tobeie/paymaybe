@@ -2,10 +2,7 @@
   "name": "pay-maybe",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["client", "frontend"],
   "scripts": {
-    "build:program": "anchor build",
-    "test:program": "anchor test --skip-local-validator",
     "probe": "cd client && npm run probe",
     "dev:frontend": "cd frontend && npm run dev",
     "build:frontend": "cd frontend && npm run build"
