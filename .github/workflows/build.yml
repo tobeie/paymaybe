@@ -1,0 +1,80 @@
+name: PayMaybe Build (Anchor & Solana)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-program:
+    name: Build Anchor On-Chain Program
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.89.0
+          components: rustfmt, clippy
+
+      - name: Cache Solana and Anchor
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/anchor
+            ~/.cargo/bin/avm
+            ~/.local/share/solana/install
+          key: ${{ runner.os }}-solana-anchor-v1
+
+      - name: Install Solana CLI
+        run: |
+          if ! command -v solana &> /dev/null; then
+            echo "Installing Solana Agave CLI..."
+            sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          fi
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install Anchor CLI
+        run: |
+          if ! command -v anchor &> /dev/null; then
+            echo "Installing Anchor AVM..."
+            cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+            avm install 0.31.1 || avm install 0.30.1
+            avm use 0.31.1 || avm use 0.30.1
+          fi
+          echo "$HOME/.avm/bin" >> $GITHUB_PATH
+
+      - name: Verify Versions
+        run: |
+          rustc --version
+          solana --version
+          anchor --version
+
+      - name: Build Anchor Program
+        run: |
+          anchor build
+
+      - name: Upload Compiled Program (.so)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pay_maybe-program-binary
+          path: target/deploy/pay_maybe.so
+          if-no-files-found: error
+
+      - name: Upload Program IDL (JSON)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pay_maybe-idl
+          path: target/idl/pay_maybe.json
+          if-no-files-found: warn

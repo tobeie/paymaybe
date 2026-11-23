@@ -1,0 +1,13 @@
+target/
+**/.DS_Store
+.anchor/
+.env
+.env.local
+node_modules/
+dist/
+.next/
+out/
+*.log
+test-ledger/
+.vercel
+idl/

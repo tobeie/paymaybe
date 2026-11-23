@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --pm-bg: #0f0e0d;
+  --pm-surface: #1a1917;
+  --pm-card: #242220;
+  --pm-border: #2e2c29;
+  --pm-gold: #d4a04a;
+  --pm-text: #f5f0e8;
+  --pm-muted: #8a8070;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: var(--pm-bg);
+  color: var(--pm-text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wallet-adapter-button {
+  background: var(--pm-card) !important;
+  border: 1px solid var(--pm-border) !important;
+  color: var(--pm-text) !important;
+  font-family: 'Inter', sans-serif !important;
+  border-radius: 8px !important;
+  font-size: 14px !important;
+  height: 40px !important;
+  padding: 0 16px !important;
+}
+.wallet-adapter-button:hover { background: var(--pm-border) !important; }
+.wallet-adapter-modal-wrapper { background: var(--pm-surface) !important; }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--pm-bg); }
+::-webkit-scrollbar-thumb { background: var(--pm-border); border-radius: 2px; }
