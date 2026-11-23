@@ -1,0 +1,1139 @@
+{
+  "address": "BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX",
+  "metadata": {
+    "name": "pay_maybe",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "PayMaybe: Buy Now, Pay Maybe — gamified confidential checkout on Solana + MagicBlock"
+  },
+  "instructions": [
+    {
+      "name": "callback_resolve_spin",
+      "docs": [
+        "Instruction 5 (MagicBlock VRF Callback): Protected by #[vrf_callback] on context.",
+        "Maps verified randomness to rebate tier + Loyalty Shards."
+      ],
+      "discriminator": [
+        41,
+        108,
+        114,
+        11,
+        228,
+        59,
+        119,
+        82
+      ],
+      "accounts": [
+        {
+          "name": "vrf_program_identity",
+          "docs": [
+            "Scoped VRF identity PDA, bound to this program. Its presence as a signer proves",
+            "the callback was issued by the VRF program for this program."
+          ],
+          "signer": true
+        },
+        {
+          "name": "buyer_account",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "randomness",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "claim_or_sell_shards",
+      "docs": [
+        "Instruction 6 (Solana L1): Claims won SOL cashback and/or sells Loyalty Shards back to StoreVault."
+      ],
+      "discriminator": [
+        17,
+        85,
+        56,
+        128,
+        207,
+        170,
+        117,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "buyer_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "store_vault"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "store_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  111,
+                  114,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "store_vault.authority",
+                "account": "StoreVault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "sell_shards_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "commit_and_undelegate_buyer",
+      "docs": [
+        "Instruction 5b (MagicBlock ER): Commits resolved BuyerAccount and undelegates back to L1.",
+        "Calls exit(&crate::ID)? BEFORE MagicIntentBundleBuilder per MagicBlock Rule #3."
+      ],
+      "discriminator": [
+        65,
+        6,
+        85,
+        41,
+        85,
+        190,
+        235,
+        151
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "buyer_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer_account.store",
+                "account": "BuyerAccount"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "magic_program",
+          "address": "Magic11111111111111111111111111111111111111"
+        },
+        {
+          "name": "magic_context",
+          "writable": true,
+          "address": "MagicContext1111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "delegate_buyer",
+      "docs": [
+        "Instruction 2c (Solana L1): Delegates BuyerAccount PDA to MagicBlock ER/TEE validator.",
+        "Uses UncheckedAccount on #[account(mut, del)] per MagicBlock Rule #2."
+      ],
+      "discriminator": [
+        51,
+        248,
+        83,
+        174,
+        56,
+        50,
+        139,
+        29
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "store_vault"
+        },
+        {
+          "name": "buffer_buyer_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer_account"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                162,
+                190,
+                118,
+                164,
+                127,
+                227,
+                115,
+                248,
+                234,
+                138,
+                123,
+                5,
+                92,
+                209,
+                110,
+                232,
+                91,
+                9,
+                105,
+                17,
+                76,
+                7,
+                110,
+                159,
+                40,
+                12,
+                187,
+                204,
+                171,
+                157,
+                252,
+                148
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegation_record_buyer_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer_account"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "delegation_metadata_buyer_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer_account"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "buyer_account",
+          "writable": true
+        },
+        {
+          "name": "owner_program",
+          "address": "BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX"
+        },
+        {
+          "name": "delegation_program",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "deposit_checkout",
+      "docs": [
+        "Instruction 2b (Solana L1): Escrows checkout payment into undelegated L1 StoreVault."
+      ],
+      "discriminator": [
+        247,
+        154,
+        78,
+        0,
+        167,
+        92,
+        3,
+        171
+      ],
+      "accounts": [
+        {
+          "name": "buyer_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "store_vault"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "store_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  111,
+                  114,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "store_vault.authority",
+                "account": "StoreVault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "item_id",
+          "type": "u8"
+        },
+        {
+          "name": "price_lamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "enable_privacy",
+      "docs": [
+        "Instruction 3 (MagicBlock ER / TEE): Marks session privacy active on ER."
+      ],
+      "discriminator": [
+        41,
+        169,
+        68,
+        23,
+        204,
+        42,
+        113,
+        59
+      ],
+      "accounts": [
+        {
+          "name": "buyer_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer_account.store",
+                "account": "BuyerAccount"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_buyer",
+      "docs": [
+        "Instruction 2a (Solana L1): Initializes BuyerAccount PDA (and records checkout escrow)."
+      ],
+      "discriminator": [
+        170,
+        91,
+        154,
+        196,
+        66,
+        193,
+        24,
+        214
+      ],
+      "accounts": [
+        {
+          "name": "buyer_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "store_vault"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "store_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  111,
+                  114,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "store_vault.authority",
+                "account": "StoreVault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_store",
+      "docs": [
+        "Instruction 1 (Solana L1): Initializes StoreVault PDA and seeds the cashback & shard reserve."
+      ],
+      "discriminator": [
+        250,
+        74,
+        6,
+        95,
+        163,
+        188,
+        19,
+        181
+      ],
+      "accounts": [
+        {
+          "name": "store_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  111,
+                  114,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "rebate_seed_lamports",
+          "type": "u64"
+        },
+        {
+          "name": "tier_odds_bps",
+          "type": {
+            "array": [
+              "u16",
+              4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "process_undelegation",
+      "discriminator": [
+        196,
+        28,
+        41,
+        206,
+        48,
+        37,
+        51,
+        167
+      ],
+      "accounts": [
+        {
+          "name": "base_account",
+          "writable": true
+        },
+        {
+          "name": "buffer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  110,
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  101,
+                  45,
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "base_account"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                181,
+                183,
+                0,
+                225,
+                242,
+                87,
+                58,
+                192,
+                204,
+                6,
+                34,
+                1,
+                52,
+                74,
+                207,
+                151,
+                184,
+                53,
+                6,
+                235,
+                140,
+                229,
+                25,
+                152,
+                204,
+                98,
+                126,
+                24,
+                147,
+                128,
+                167,
+                62
+              ]
+            }
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "account_seeds",
+          "type": {
+            "vec": "bytes"
+          }
+        }
+      ]
+    },
+    {
+      "name": "request_spin",
+      "docs": [
+        "Instruction 4 (MagicBlock ER / L1 VRF): Requests verifiable randomness from MagicBlock VRF."
+      ],
+      "discriminator": [
+        186,
+        157,
+        114,
+        217,
+        55,
+        116,
+        223,
+        114
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "buyer_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer_account.store",
+                "account": "BuyerAccount"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracle_queue",
+          "writable": true
+        },
+        {
+          "name": "program_identity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrf_program",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slot_hashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "client_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "BuyerAccount",
+      "discriminator": [
+        132,
+        99,
+        140,
+        101,
+        194,
+        67,
+        194,
+        66
+      ]
+    },
+    {
+      "name": "StoreVault",
+      "discriminator": [
+        250,
+        95,
+        90,
+        250,
+        121,
+        253,
+        227,
+        92
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "CheckoutStarted",
+      "discriminator": [
+        31,
+        192,
+        227,
+        227,
+        181,
+        16,
+        249,
+        102
+      ]
+    },
+    {
+      "name": "PrivacyEnabled",
+      "discriminator": [
+        157,
+        117,
+        83,
+        218,
+        61,
+        21,
+        16,
+        209
+      ]
+    },
+    {
+      "name": "SpinResolved",
+      "discriminator": [
+        121,
+        121,
+        11,
+        214,
+        229,
+        125,
+        76,
+        86
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidOdds",
+      "msg": "Tier odds bps must sum to 10000"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidPrice",
+      "msg": "Invalid price: must be > 0"
+    },
+    {
+      "code": 6002,
+      "name": "SpinAlreadyPending",
+      "msg": "Spin already pending — wait for VRF callback"
+    },
+    {
+      "code": 6003,
+      "name": "InsufficientShards",
+      "msg": "Insufficient shard balance"
+    },
+    {
+      "code": 6004,
+      "name": "InsufficientPoolReserve",
+      "msg": "Insufficient pool reserve for payout"
+    },
+    {
+      "code": 6005,
+      "name": "Unauthorized",
+      "msg": "Unauthorized"
+    }
+  ],
+  "types": [
+    {
+      "name": "BuyerAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "store",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "spin_state",
+            "type": {
+              "defined": {
+                "name": "SpinState"
+              }
+            }
+          },
+          {
+            "name": "last_item_id",
+            "type": "u8"
+          },
+          {
+            "name": "pending_amount",
+            "type": "u64"
+          },
+          {
+            "name": "last_rebate_bps",
+            "type": "u16"
+          },
+          {
+            "name": "claimable_rebate_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "shard_balance",
+            "type": "u64"
+          },
+          {
+            "name": "total_checkouts",
+            "type": "u64"
+          },
+          {
+            "name": "total_won_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "is_private",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CheckoutStarted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "item_id",
+            "type": "u8"
+          },
+          {
+            "name": "price_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PrivacyEnabled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SpinResolved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "rebate_bps",
+            "type": "u16"
+          },
+          {
+            "name": "rebate_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "shards_earned",
+            "type": "u64"
+          },
+          {
+            "name": "roll",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SpinState",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Idle"
+          },
+          {
+            "name": "PendingVrf"
+          },
+          {
+            "name": "Resolved"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StoreVault",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "tier_odds_bps",
+            "type": {
+              "array": [
+                "u16",
+                4
+              ]
+            }
+          },
+          {
+            "name": "total_pool_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "total_shard_reserve",
+            "type": "u64"
+          },
+          {
+            "name": "total_checkouts",
+            "type": "u64"
+          },
+          {
+            "name": "total_paid_out_lamports",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}
