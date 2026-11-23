@@ -62,30 +62,16 @@ jobs:
 
       - name: Prepare Program Keypair & Build Program (.so + IDL)
         run: |
-          mkdir -p ~/.config/solana target/deploy
+          mkdir -p ~/.config/solana target/deploy frontend/src/idl client/src/idl
           cp programs/pay-maybe/pay_maybe-keypair.json target/deploy/pay_maybe-keypair.json
           if [ ! -f ~/.config/solana/id.json ]; then
             solana-keygen new --no-bip39-passphrase -o ~/.config/solana/id.json --force
           fi
           solana config set --url devnet
           anchor build
-          ls -lh target/deploy/pay_maybe.so target/idl/pay_maybe.json
-
-      - name: Sync Generated IDL to Frontend & Client
-        if: ${{ inputs.sync_idl != false }}
-        run: |
-          mkdir -p frontend/src/idl client/src/idl
           cp target/idl/pay_maybe.json frontend/src/idl/pay_maybe.json
           cp target/idl/pay_maybe.json client/src/idl/pay_maybe.json
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add frontend/src/idl/pay_maybe.json client/src/idl/pay_maybe.json
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: sync compiled Anchor 1.0.2 IDL (pay_maybe.json)"
-            git push origin HEAD:main
-          else
-            echo "IDL already up to date."
-          fi
+          ls -lh target/deploy/pay_maybe.so target/idl/pay_maybe.json
 
       - name: Upload Compiled Program (.so) & IDL
         uses: actions/upload-artifact@v4
@@ -94,6 +80,20 @@ jobs:
           path: |
             target/deploy/pay_maybe.so
             target/idl/pay_maybe.json
+
+      - name: Sync Generated IDL to Frontend & Client
+        if: ${{ inputs.sync_idl != false }}
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f frontend/src/idl/pay_maybe.json client/src/idl/pay_maybe.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: sync compiled Anchor 1.0.2 IDL (pay_maybe.json) [skip ci]"
+            git push origin HEAD:main
+          else
+            echo "IDL already up to date."
+          fi
 
       - name: Setup Devnet Deployer Wallet & Fund via Airdrop
         id: wallet
