@@ -51,6 +51,93 @@
       ]
     },
     {
+      "name": "cancel_spin",
+      "docs": [
+        "Instruction 8 (Solana L1): Safety valve. If a checkout was paid but the spin never resolved",
+        "(oracle never answered, or buyer abandoned it), the buyer can undelegate the account and",
+        "get the exact payment back. Only valid while the account is back on L1 and the spin is",
+        "still `Paid` or `PendingVrf`. A resolved spin can never be cancelled, so a buyer cannot",
+        "refund after seeing a losing roll."
+      ],
+      "discriminator": [
+        12,
+        123,
+        214,
+        19,
+        23,
+        69,
+        77,
+        88
+      ],
+      "accounts": [
+        {
+          "name": "buyer_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  121,
+                  101,
+                  114,
+                  95,
+                  118,
+                  50
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "store_vault"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "store_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  111,
+                  114,
+                  101,
+                  95,
+                  118,
+                  50
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "store_vault.authority",
+                "account": "StoreVault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "claim_or_sell_shards",
       "docs": [
         "Instruction 6 (Solana L1): Claims won SOL cashback and/or sells Loyalty Shards back to StoreVault."
@@ -1162,6 +1249,19 @@
       ]
     },
     {
+      "name": "SpinCancelled",
+      "discriminator": [
+        93,
+        7,
+        29,
+        186,
+        128,
+        93,
+        29,
+        166
+      ]
+    },
+    {
       "name": "SpinResolved",
       "discriminator": [
         121,
@@ -1235,6 +1335,11 @@
       "code": 6011,
       "name": "Unauthorized",
       "msg": "Unauthorized"
+    },
+    {
+      "code": 6012,
+      "name": "NothingToCancel",
+      "msg": "Nothing to cancel: no paid, unresolved spin on this account"
     }
   ],
   "types": [
@@ -1371,6 +1476,22 @@
           {
             "name": "timestamp",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SpinCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "refund_lamports",
+            "type": "u64"
           }
         ]
       }
