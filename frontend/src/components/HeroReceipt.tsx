@@ -4,7 +4,7 @@ import { ITEMS, TIERS, formatSol, formatRoll, formatReceiptDate } from "../lib/c
 import { OdometerReel } from "./OdometerReel";
 import { ReceiptBarcode } from "./ReceiptBarcode";
 
-const EXAMPLE_ITEM = ITEMS[3]; // Mystery Rollup Box · 0.15 SOL
+const EXAMPLE_ITEM = ITEMS[3]; // Mystery Box · 0.15 SOL
 const EXAMPLE_ROLL = 9942;
 
 export function HeroReceipt() {

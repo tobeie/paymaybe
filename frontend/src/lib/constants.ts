@@ -74,11 +74,11 @@ export const ITEMS: readonly CatalogItem[] = [
   },
   {
     id: 1,
-    name: "Sub-100ms Hoodie",
+    name: "Founder Hoodie",
     icon: "hoodie",
     priceLamports: 50_000_000n,
     priceDisplay: "0.05 SOL",
-    description: "A limited drop, quicker than you can blink.",
+    description: "Limited-edition heavyweight hoodie for builders.",
   },
   {
     id: 2,
@@ -90,11 +90,11 @@ export const ITEMS: readonly CatalogItem[] = [
   },
   {
     id: 3,
-    name: "Mystery Rollup Box",
+    name: "Mystery Box",
     icon: "box",
     priceLamports: 150_000_000n,
     priceDisplay: "0.15 SOL",
-    description: "A sealed collectible. It opens when it settles.",
+    description: "A sealed collectible. Could be anything.",
   },
 ] as const;
 
@@ -124,7 +124,7 @@ export const SHELF_POOL: Readonly<Record<number, readonly ShelfEntry[]>> = {
   ],
   // Tier 1 · 0.05 SOL
   1: [
-    { name: "Sub-100ms Hoodie", icon: "hoodie", description: "A limited drop, quicker than you can blink." },
+    { name: "Founder Hoodie", icon: "hoodie", description: "Limited-edition heavyweight hoodie for builders." },
     { name: "Undelegate Cap", icon: "cap", description: "Take it off whenever you like. Back on Solana in a flash." },
     { name: "Ephemeral Tee", icon: "hoodie", description: "Soft, light, and gone from the shelf by tomorrow." },
     { name: "Zero-Gas Beanie", icon: "cap", description: "Keeps your head warm and your fees at nothing." },
@@ -140,7 +140,7 @@ export const SHELF_POOL: Readonly<Record<number, readonly ShelfEntry[]>> = {
   ],
   // Tier 3 · 0.15 SOL
   3: [
-    { name: "Mystery Rollup Box", icon: "box", description: "A sealed collectible. It opens when it settles." },
+    { name: "Mystery Box", icon: "box", description: "A sealed collectible. Could be anything." },
     { name: "Dev Board Bundle", icon: "chip", description: "A board, a cable, and an idea that will not fit in one weekend." },
     { name: "Retro Arcade Cabinet", icon: "gamepad", description: "Fully on-chain in spirit. Please stand back from the joystick." },
     { name: "Moonshot Crate", icon: "rocket", description: "Packed fast, shipped faster, lands wherever the roll says." },
