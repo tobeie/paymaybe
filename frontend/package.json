@@ -19,7 +19,8 @@
     "@solana/wallet-adapter-phantom": "^0.9.24",
     "@solana/wallet-adapter-base": "^0.9.23",
     "framer-motion": "^12.4.7",
-    "bs58": "^6.0.0"
+    "bs58": "^6.0.0",
+    "buffer": "^6.0.3"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

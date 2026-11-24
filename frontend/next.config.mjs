@@ -12,7 +12,6 @@ const nextConfig = {
         ...config.resolve.fallback,
         crypto: false,
         stream: false,
-        buffer: false,
         fs: false,
         path: false,
         os: false,

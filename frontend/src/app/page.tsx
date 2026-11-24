@@ -103,7 +103,7 @@ export default function Home() {
         onClaim={claimRebate}
         onSellShards={sellShards}
         onBurnForSpin={() => sellShards(10n)}
-        lastCheckouts={[]}
+        lastCheckouts={state.lastCheckouts}
       />
     </div>
   );
