@@ -1,27 +1,28 @@
-# PayMaybe — Confidential "Buy Now, Pay Maybe" Checkout on Solana & MagicBlock
+# PayMaybe — Confidential "Buy Now, Pay Maybe" Checkout on Solana & MagicBlock TEE
 
 > **MagicBlock Solana Blitz v10 (Nov 20–27, 2026) · Theme: Entertainment Finance**  
-> *Every checkout gives you an instant, provably fair chance to get your purchase 100% free — plus tradeable, SOL-backed Loyalty Shards you can sell back to the pool anytime.*
+> *Every checkout gives you an instant, provably fair chance to get your purchase 100% free — privately inside a MagicBlock Intel TDX Trusted Execution Environment, with SOL-backed Loyalty Shards you can sell back to the pool anytime.*
 
 - **Live App (Vercel):** [https://paymaybe-w298.vercel.app/](https://paymaybe-w298.vercel.app/)
 - **Live Devnet Program ID:** [`BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX`](https://explorer.solana.com/address/BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX?cluster=devnet)
-- **Live Funded StoreVault Authority:** `FRFw8oAUQsHn3fZfis4dGcRhAXanoMo77TaKnm6cwLgf`
-- **CI / Milestone 0 Probe (All Green):** [GitHub Actions Run #5](https://github.com/tobeie/paymaybe/actions/runs/45299780458)
+- **Live Funded StoreVault PDA (`store_v2`):** [`41ejxCLF7k88c5sH1qiM17Y5dRNbWmzFekim7ynDxN9r`](https://explorer.solana.com/address/41ejxCLF7k88c5sH1qiM17Y5dRNbWmzFekim7ynDxN9r?cluster=devnet) *(Authority: `FRFw8oAUQsHn3fZfis4dGcRhAXanoMo77TaKnm6cwLgf`)*
+- **CI (Anchor 1.0.2 + Strict Frontend + Client):** [GitHub Actions CI Run (All Green)](https://github.com/tobeie/paymaybe/actions/runs/45308962241)
+- **Live Devnet + MagicBlock TEE / VRF & Security Audit Probe:** [GitHub Actions Deploy & Probe Run #6 (All Green)](https://github.com/tobeie/paymaybe/actions/runs/45309013497)
 
 ---
 
 ## 1. The Concept
 
-Directly inspired by MagicBlock CEO Andrea Fortugno's *"Buy Now, Pay Maybe"* Entertainment Finance thesis, **PayMaybe** is a drop-in gamified checkout storefront on Solana where every real purchase triggers a sub-second, provably fair rebate spin inside a **MagicBlock Ephemeral Rollup + MagicBlock VRF**:
+Directly inspired by MagicBlock CEO Andrea Fortugno's *"Buy Now, Pay Maybe"* Entertainment Finance thesis, **PayMaybe** is a drop-in gamified checkout storefront on Solana where every real purchase triggers a private, sub-second, provably fair rebate spin inside a **MagicBlock Private Ephemeral Rollup (TEE) + Permission Program + MagicBlock VRF**:
 
-1. **Pay Once on Solana L1 (`deposit_checkout` + `delegate_buyer`):**  
-   The buyer pays into an **undelegated** Solana L1 `StoreVault` PDA seeded with a cashback & shard-buyback reserve, and delegates only their `BuyerAccount` PDA to MagicBlock ER.
-2. **Instant, Gasless VRF Spin on MagicBlock ER (`enable_privacy` + `request_spin` → `callback_resolve_spin`):**  
-   Inside MagicBlock ER (`devnet-us.magicblock.app`), MagicBlock VRF (`DEFAULT_EPHEMERAL_QUEUE`) generates RFC 9381 verifiable randomness and invokes our spoof-proof `#[vrf_callback]` in **~100ms (2 ER slots)** with **0 gas** — awarding an instant SOL cashback tier (0%, 25%, 50%, or **100% FREE**) plus guaranteed **Loyalty Shards**.
-3. **Instant L1 Settlement & "Sell Anytime" Liquidity (`commit_and_undelegate_buyer` → `claim_or_sell_shards`):**  
-   `MagicIntentBundleBuilder::commit_and_undelegate` settles the resolved `BuyerAccount` back to Solana L1 (tracked via `GetCommitmentSignature` on `@magicblock-labs/ephemeral-rollups-sdk@0.18.0`). Buyers can immediately **Claim SOL Cashback** or **Sell Loyalty Shards Anytime** back to the L1 `StoreVault` reserve for instant SOL liquidity.
+1. **Pay Once on Solana L1 (`init_buyer` + `deposit_checkout` + `delegate_buyer`):**  
+   The buyer pays a fixed on-chain catalog price into an **undelegated** Solana L1 `StoreVault` PDA seeded with cashback & shard-buyback liquidity, pre-funds `BuyerAccount` with `EphemeralPermission` rent, and delegates only their `BuyerAccount` PDA to the **MagicBlock TEE Validator (`MTEWGuqxUpYZGFJQcp8tLN7x5v9BSeoFHYWQQ3n3xzo`)**.
+2. **Confidential TEE Permission + Gasless VRF Spin (`enable_privacy` + `request_spin` → `callback_resolve_spin`):**  
+   Inside MagicBlock TEE (`https://devnet-tee.magicblock.app`), `enable_privacy` invokes the real **MagicBlock Permission Program (`ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1`)** via `CreateEphemeralPermissionCpi` (`is_private: true`, buyer-only read/logs). Unauthenticated stranger reads against the TEE return `{ "value": null }` while the authenticated buyer (via `getAuthToken` JWT) reads their live 136-byte state. MagicBlock VRF (`DEFAULT_EPHEMERAL_QUEUE`) then executes our spoof-proof `#[vrf_callback]` in **5 TEE slots (~250ms)** for **3,479 CU** and **0 gas**, rolling an unbiased 64-bit tier against `StoreVault.tier_odds_bps` and awarding instant SOL cashback (0%, 25%, 50%, or **100% FREE**) plus guaranteed **Loyalty Shards**.
+3. **Instant L1 Settlement, "Sell Anytime" Liquidity & Merchant Withdraw (`commit_and_undelegate_buyer` → `claim_or_sell_shards` / `withdraw_merchant_funds`):**  
+   `commit_and_undelegate_buyer` invokes `CloseEphemeralPermissionCpi` (refunding ephemeral permission rent back to `BuyerAccount`) and calls `MagicIntentBundleBuilder::commit_and_undelegate` (confirmed on L1 via `GetCommitmentSignature` in `@magicblock-labs/ephemeral-rollups-sdk@0.18.0`). Buyers can immediately **Claim SOL Cashback** or **Sell Loyalty Shards Anytime** back to the L1 `StoreVault` reserve, while merchants can withdraw earned revenue via `withdraw_merchant_funds` without ever touching protected shard reserves or active buyer escrows.
 
-> **Zero fake simulation:** No `Math.random()`, no mocked outcomes, no hardcoded tx hashes. Every checkout, VRF roll, privacy check, commit, and SOL payout is a live Solana Devnet + MagicBlock ER transaction.
+> **Zero fake simulation:** No `Math.random()`, no mocked outcomes, no fake privacy checks, no hardcoded tx hashes. Every checkout, Permission Program CPI, dual-read TEE privacy proof, VRF roll, commit, and SOL payout is a live Solana Devnet + MagicBlock TEE transaction.
 
 ---
 
@@ -29,66 +30,83 @@ Directly inspired by MagicBlock CEO Andrea Fortugno's *"Buy Now, Pay Maybe"* Ent
 
 *If you ask: "Couldn't you just do this with Switchboard VRF on Solana L1?" — No:*
 
-| Requirement | Solana L1 Only | PayMaybe on MagicBlock ER + VRF |
+| Requirement | Solana L1 Only | PayMaybe on MagicBlock TEE + VRF |
 |---|---|---|
-| **Checkout Spin UX** | 5–15s wait for external L1 oracle + extra tx fees | **~100ms (2 ER slots), 0 gas** inside MagicBlock ER |
-| **Consumer Financial Privacy** | Every purchase, spin attempt & win broadcast in real time on L1 | Delegated session isolated on ER/TEE with live unauthenticated RPC verification (`{ "value": null }`) |
+| **Checkout Spin UX** | 5–15s wait for external L1 oracle + extra tx fees | **Sub-second (~250ms), 0 gas** inside MagicBlock TEE |
+| **Consumer Financial Privacy** | Every purchase, spin attempt & win broadcast publicly on L1 | **Hardware Intel TDX TEE + Permission Program (`ACLseoPoy...`)**: live dual-read proof verifies strangers get `null` while the signed buyer reads their live state via `getAuthToken` JWT |
 | **Custody & Instant Exit** | All state & funds coupled on one layer | Real SOL stays anchored in **undelegated L1 `StoreVault`**; only `BuyerAccount` delegates and commits settlement back for instant "Sell Anytime" payouts |
 
 ---
 
-## 3. Architecture & Data Flow
+## 3. Architecture, Odds & Security Invariants
 
 ```text
-  Buyer (Phantom on Devnet)          Solana L1 (Custody)              MagicBlock ER + VRF
-  ─────────────────────────          ───────────────────              ───────────────────
+  Buyer (Phantom on Devnet)          Solana L1 (Custody)              MagicBlock TEE (Intel TDX + VRF)
+  ─────────────────────────          ───────────────────              ────────────────────────────────
   1. Click "Buy Now" ──────────────► StoreVault PDA (undelegated)
-     (init_buyer + deposit_checkout   • Escrows real Devnet SOL
-      + delegate_buyer)               • Holds cashback + shard reserve
-                                      └─ delegates BuyerAccount PDA ──► BuyerAccount PDA on ER
-                                                                        2. enable_privacy (0 gas)
-                                                                        3. request_spin (0 gas)
+     (init_buyer + deposit_checkout   • Enforces fixed catalog price
+      + delegate_buyer)               • Locks active_escrow + shard reserve
+                                      • SpinState: Idle -> Paid
+                                      └─ delegates BuyerAccount ──────► BuyerAccount PDA on TEE
+                                                                        2. getAuthToken (Ed25519 JWT)
+                                                                        3. enable_privacy (0 gas)
+                                                                           └─► Permission Program CPI
+                                                                               (ACLseoPoy...: buyer-only)
+                                                                        4. Dual-Read Privacy Proof:
+                                                                           • Stranger (no token) -> null
+                                                                           • Owner (JWT) -> 136 bytes
+                                                                        5. request_spin (Paid -> PendingVrf)
                                                                            └─► MagicBlock VRF Oracle
-                                                                        4. #[vrf_callback] callback_resolve_spin
-                                                                           • Lands in ~100ms (2 ER slots)
-                                                                           • Credits rebate + Loyalty Shards
-                                     L1 BuyerAccount restored ◄──────── 5. MagicIntentBundleBuilder
-                                     (confirmed via SDK 0.18.0              ::commit_and_undelegate
-                                      GetCommitmentSignature)
-  6. Claim SOL / Sell Shards ──────► claim_or_sell_shards (L1)
+                                                                        6. #[vrf_callback] callback_resolve_spin
+                                                                           • Unbiased u64 % 10_000 roll
+                                                                           • PendingVrf -> Resolved, pending=0
+                                                                           • 3,479 CU (compile-time VRF ID)
+                                     L1 BuyerAccount restored ◄──────── 7. CloseEphemeralPermissionCpi +
+                                     (confirmed via SDK 0.18.0             MagicIntentBundleBuilder
+                                      GetCommitmentSignature)              ::commit_and_undelegate
+  8. Claim SOL / Sell Shards ──────► claim_or_sell_shards (L1)
      Anytime                          • Instant SOL transfer from StoreVault
+  9. Merchant Revenue ─────────────► withdraw_merchant_funds (L1)
+                                      • Protects rent + shard_reserve + active_escrow
 ```
 
-### Transparent Odds & "Sell Anytime" Shard Math
+### Unbiased On-Chain Odds (`u64::from_le_bytes(randomness[0..8]) % 10_000`)
 
-| VRF Roll (`randomness[0] % 100`) | Probability | Instant Cashback | Guaranteed Loyalty Shards |
+Evaluated directly against `StoreVault.tier_odds_bps` (`[7500, 1800, 600, 100]` by default; modulo bias $< 5.5 \times 10^{-16}$):
+
+| VRF Roll (`roll_bps` in `0..9999`) | Exact Probability | Instant Cashback | Guaranteed Loyalty Shards |
 |---:|---:|---:|---:|
-| `99` | **1%** | **100% FREE (Full Refund)** | `10` Shards |
-| `93–98` | **6%** | **50% Off** | `25` Shards |
-| `75–92` | **18%** | **25% Off** | `50` Shards |
-| `0–74` | **75%** | `0%` | **`100` Shards** |
+| `9900–9999` | **1.00%** | **100% FREE (Full Refund)** | `10` Shards |
+| `9300–9899` | **6.00%** | **50% Off** | `25` Shards |
+| `7500–9299` | **18.00%** | **25% Off** | `50` Shards |
+| `0–7499` | **75.00%** | `0%` | **`100` Shards** |
 
-- **Real SOL Backing:** Every Loyalty Shard is redeemable anytime on Solana L1 at `100 lamports / shard` directly from `StoreVault.total_shard_reserve` via `claim_or_sell_shards`.
+### On-Chain Security Invariants (Hardened & Live-Tested)
+- **1 Payment = Strictly 1 Spin:** `SpinState` enforces `Idle -> Paid -> PendingVrf -> Resolved -> Idle`. `request_spin` requires `Paid` + `pending_amount > 0` and immediately flips to `PendingVrf`; `callback_resolve_spin` requires `PendingVrf` and immediately zeroes `pending_amount = 0`.
+- **Fixed Catalog Prices:** `deposit_checkout` enforces on-chain `ITEM_PRICES_LAMPORTS` (`[0.02, 0.05, 0.10, 0.15]` SOL) by `item_id` — eliminating 1-lamport shard farming — and replenishes `total_shard_reserve` (`+10,000` lamports) on every checkout.
+- **Solvency-Protected Merchant Withdrawals:** `withdraw_merchant_funds` allows `StoreVault.authority` to withdraw earned revenue while strictly preserving `rent_min + total_shard_reserve + active_escrow_lamports`.
+- **No Public Keypairs & Strict CI:** Zero keypair files tracked in git, `deploy-devnet.yml` hard-fails if `DEVNET_DEPLOYER_KEYPAIR` is missing, and strict `tsc --noEmit` + `next build` (no `ignoreBuildErrors`) runs on every push.
 
 ---
 
-## 4. Verified Live Devnet + MagicBlock ER On-Chain Proof (Milestone 0)
+## 4. Verified Live Devnet + MagicBlock TEE & Security Audit Proofs
 
-Every instruction in our Anchor 1.0.2 program (`programs/pay-maybe/src/lib.rs`) is deployed and verified end-to-end on live Solana Devnet + `devnet-us.magicblock.app`:
+Every instruction and negative exploit test in [milestone0-probe.ts](client/src/milestone0-probe.ts) ran live on Solana Devnet + `https://devnet-tee.magicblock.app` in **[Run #6 (`45309013497`)](https://github.com/tobeie/paymaybe/actions/runs/45309013497)**:
 
-| Step | Layer | Instruction | Verified Live Transaction |
+| Step | Layer | Action / Security Proof | Verified Live On-Chain Transaction |
 |---|---|---|---|
-| **0** | Solana Devnet | Program Deploy & Upgrade (`BxHVeQ7R...`) | [`kJYt8qWD...`](https://explorer.solana.com/tx/kJYt8qWDwenV7YnWSYcmnp1YYCt1sJGx1w4eypp4RLHVQSH4Gi4GYXvZHRRxwSyLAMZsJUdzdVDxbWNiPQauqtd?cluster=devnet) |
-| **1** | Solana Devnet | `init_store` (Seed Cashback & Shard Reserve) | [`2iDZe7fu...`](https://explorer.solana.com/tx/2iDZe7fuf1GpH2FYxYHKCYN21FhcySJiECsQg3811cXV26VDewTipZv2t5j9PMXzb3xUnMTPiNyHhxs96HQxEWou?cluster=devnet) |
-| **2** | Solana Devnet | `init_buyer` (Initialize `BuyerAccount` PDA) | [`VGNQAw8v...`](https://explorer.solana.com/tx/VGNQAw8v4wvMDgD2ZHaLfBZ72rxqmi7smiaTYhzzxrDbLHmT1nSEzJhEcybN2nufWnv7Kq7872peymmAEah8EYo?cluster=devnet) |
-| **3** | Solana Devnet | `deposit_checkout` (Escrow 0.02 SOL) | [`mNfnUixq...`](https://explorer.solana.com/tx/mNfnUixqy3B4Lv6vSfwCbsaidzJDTeVS8ydob3zauFHySCMUpf5U8ou5SStzKDoUNsPaiFzwdFnA65T2EdL4C7u?cluster=devnet) |
-| **4** | Solana Devnet | `delegate_buyer` → `MUS3hc9T...` (ER) | [`5aEZE9nV...`](https://explorer.solana.com/tx/5aEZE9nV3LW4sFe3KTA4G4hSNuWm3Kr4F8fUGQnGK6UyzbBfGQshUXXGkKAfJZtyKkJqZ3UGqKu5Mea9MYMDDcnE?cluster=devnet) |
-| **5** | MagicBlock ER | `enable_privacy` (0 gas) | [`2GUEyr2V...`](https://explorer.solana.com/tx/2GUEyr2VXt18Se84thumaymmZx98JaGCc1t2dVoqFp3ttLrfdLrUew3Cap1jC3CJ6WnzQSyvwVha62pa9u8VuXxZ?cluster=custom&customUrl=https%3A%2F%2Fdevnet-us.magicblock.app) |
-| **6** | MagicBlock ER | `request_spin` (MagicBlock VRF Request) | [`2QWuAWpX...`](https://explorer.solana.com/tx/2QWuAWpXTFtPm7rpY7DAqjyGE7s6bi2navx6Uvi14PQL7pGGGPtL2HUTuCk7QbnBmKukMgpkb6kpP1N9nFqfbuqp?cluster=custom&customUrl=https%3A%2F%2Fdevnet-us.magicblock.app) |
-| **7** | MagicBlock ER | `#[vrf_callback] callback_resolve_spin` *(+2 slots!)* | [`65HE5i6L...`](https://explorer.solana.com/tx/65HE5i6LUC7sDLtW1SMBbYjnTGEa3TwhSeaH5kygg4jzK7ckVALgr7yP75chypLE6RBqfVL8WGZBwAKsMxf9DTR9?cluster=custom&customUrl=https%3A%2F%2Fdevnet-us.magicblock.app) |
-| **8** | MagicBlock ER | `commit_and_undelegate_buyer` | [`3k7Aet8N...`](https://explorer.solana.com/tx/3k7Aet8NJGZLhLwpSEeWrUeonEEaPsLNksECajZt1hsjNPTbG4TdyWABLDkqVdnFBeptJ4AXKBb7m7uwfK7qWhov?cluster=custom&customUrl=https%3A%2F%2Fdevnet-us.magicblock.app) |
-| **9** | Solana Devnet | L1 Settlement Commit (`GetCommitmentSignature` 0.18.0) | [`5bEAtGfR...`](https://explorer.solana.com/tx/5bEAtGfRu6Wotsx6ato9UYFgkAjRPUoUjp7otdrugzXz25qmfWma4MfonjY67jXj5zuMjdnGUAjgBS16nvKKrfXa?cluster=devnet) |
-| **10** | Solana Devnet | `claim_or_sell_shards` (Real SOL Payout) | [`trwV5L7i...`](https://explorer.solana.com/tx/trwV5L7idkteiDVcwhgJHaB7TcDRfuiwZGUiPCEcoBZ39uYuCnm9aMqdMDUyqVwc5wwnxBuSbkaGxRTC6qWzHUo?cluster=devnet) |
+| **1** | Solana Devnet | `init_store` (`store_v2`, 0.10 SOL seed, `[7500, 1800, 600, 100]`) | [`2cMvfLWR...`](https://explorer.solana.com/tx/2cMvfLWRmqhV7sXaGLRqAauKCGTzkTZXkUixcYCzYZeJW1bUVk4MTkWGtggiHXMbVLehPxpCpTUNMzm8ofYwrpeZ?cluster=devnet) |
+| **2** | Solana Devnet | `init_buyer` (`buyer_v2` + pre-funds `EphemeralPermission` rent) | [`5oPBn6Wk...`](https://explorer.solana.com/tx/5oPBn6WkWzuLiYyLrScokT4pumXWXUA9MDQ7fMKBZuycAj5s7cQEWxEg7SSEo7FG56ZT2iRx8FEdEWVYx8TUeCCA?cluster=devnet) |
+| **3** | Solana Devnet | `deposit_checkout` (1-lamport exploit rejected; fixed `0.02 SOL` escrowed) | [`66DEXy2a...`](https://explorer.solana.com/tx/66DEXy2aYbQ275ErevNZWhdFigSJBRv5Qa9EuFziccNUhEBhEYB8Zs2ihFQRqyZeH9ASgfQ7FTNNSTA2PZsc12R9?cluster=devnet) |
+| **4** | Solana Devnet | `delegate_buyer` → `MTEWGuqx...` (MagicBlock TEE Validator) | [`371cfn5R...`](https://explorer.solana.com/tx/371cfn5RemtiXmEVQb9Gbbs8MfYbXSXCgKqTHccSwXkLBSFwpipRXXfv7ka2JXCreMABY9KrJJRTD8UUixfyGUG3?cluster=devnet) |
+| **5** | MagicBlock TEE | `enable_privacy` → **Real `ACLseoPoy...` Permission Program CPI** (`6,151 CU`) + Dual-Read Proof (`Stranger: null`, `Owner JWT: 136 bytes`) | [`2qCXAkQr...`](https://explorer.solana.com/tx/2qCXAkQrMTTeEYdma2hmdgoadUDPNaT6oJ7io2bd3vDt7XRR7xPXbbas4RF4nj5BYpNPB2bhUN6fHhymWSGdhXYd?cluster=custom&customUrl=https%3A%2F%2Fdevnet-tee.magicblock.app) |
+| **6** | MagicBlock TEE | `request_spin` (`Paid -> PendingVrf`, VRF on `DEFAULT_EPHEMERAL_QUEUE`) | [`3hzHjWro...`](https://explorer.solana.com/tx/3hzHjWrob42URYrWTrsrgLRWFESJN7WTNPyvRaBRyhDxf4UqxLQoiQh3Xn5gXbQmbTrbXUVchGgE42pFpNS97LRV?cluster=custom&customUrl=https%3A%2F%2Fdevnet-tee.magicblock.app) |
+| **7** | MagicBlock TEE | `#[vrf_callback] callback_resolve_spin` *(+5 slots, **3,479 CU**, roll `8459/9999` → **25% Off = 0.005 SOL + 50 Shards**, `pending=0`)* | [`36QbTVqt...`](https://explorer.solana.com/tx/36QbTVqtbSCVW7oYLmo7qeBycj1ks8GNhNSgzWBBDaoKqm2SXwudYP42UXijzJw51MjFpEhFgF195AjK1U7BUGGr?cluster=custom&customUrl=https%3A%2F%2Fdevnet-tee.magicblock.app) |
+| **8** | MagicBlock TEE | **Negative Exploit Proof:** 2nd `request_spin` rejected on-chain (`Error 6005: NoPaidCheckout`) | [`3MVeSc2v...`](https://explorer.solana.com/tx/3MVeSc2vYz6RY9H1uJWQvaeRbjq3wwjpw8Ct3X2BDMptTUwZqbU2zfyZkSS3UiepdnJaTxw3YVaM86o38i9pX4US?cluster=custom&customUrl=https%3A%2F%2Fdevnet-tee.magicblock.app) |
+| **9** | MagicBlock TEE | `commit_and_undelegate_buyer` (`CloseEphemeralPermissionCpi` + undelegate) | [`3XFE9V1S...`](https://explorer.solana.com/tx/3XFE9V1SPRvooUgmgXNzAE8NsasPE6CVJHzYnzdm7K7VuD1ZacVDrhNErJ4GMxT4gwSrJHMkc9udVgVEwmtKCo9C?cluster=custom&customUrl=https%3A%2F%2Fdevnet-tee.magicblock.app) |
+| **10** | Solana Devnet | L1 Settlement Commit (`ProcessUndelegation` via SDK 0.18.0 `GetCommitmentSignature`) | [`5iUEeGDH...`](https://explorer.solana.com/tx/5iUEeGDH8MNa83n33r7VfqpGzfvLZYXWCuawF7R4PVQS92DTLeGnqnRgChX1wEqv7dQAovBQbkRqHpT66Vds1yv8?cluster=devnet) |
+| **11** | Solana Devnet | `claim_or_sell_shards` (Paid `5,001,000` lamports = 0.005 SOL cashback + 10 sold shards) | [`5N7wbEAJ...`](https://explorer.solana.com/tx/5N7wbEAJwLkCcCai2FLgmV3WtBAHcTWHSnN6BwH74ffv7eBZm5n42e6Stn9Z2Y8UFtVEJftctmq2RWtftMjRrrYo?cluster=devnet) |
+| **12** | Solana Devnet | `withdraw_merchant_funds` (Reserve-rug rejected; withdrew `0.001 SOL` safely) | [`2Ctq7rRv...`](https://explorer.solana.com/tx/2Ctq7rRv8npuebbWsrZcsocQGHZiXxjr2k8qz2eTmQ4tKEWEczFpMHRQciKNq4xMmmHjCVmHhz7F4JfT8iu5yDTw?cluster=devnet) |
 
 ---
 
@@ -96,7 +114,7 @@ Every instruction in our Anchor 1.0.2 program (`programs/pay-maybe/src/lib.rs`) 
 
 ### Fixing a 271k-CU Runtime Exhaustion Bug in `ephemeral-rollups-sdk v0.18.0`'s `#[vrf_callback]` Macro
 
-During live Devnet testing on `devnet-us.magicblock.app`, the real MagicBlock VRF oracle (`Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz`) invoked `CallbackResolveSpin` immediately, but our program consistently exhausted the entire compute budget before entering the handler body:
+During live Devnet testing, the real MagicBlock VRF oracle (`Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz`) invoked `CallbackResolveSpin` immediately, but our program consistently exhausted the entire compute budget before entering the handler body:
 
 ```text
 Program BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX invoke [2]
@@ -131,11 +149,11 @@ pub struct CallbackResolveSpin<'info> {
     pub buyer_account: Account<'info, BuyerAccount>,
 }
 ```
-This drops VRF identity validation from **>271,000 CU to ~0 runtime CU**, allowing `callback_resolve_spin` to settle cleanly 2 ER slots after `request_spin`.
+This drops VRF callback execution from **>271,190 CU (out-of-compute crash)** to **3,479 CU total** on `devnet-tee.magicblock.app` (verified live in tx `36QbTVqt...`).
 
-### Validator v1 + v2 Compatibility (`0.18.0` Pin)
+### Validator v2 + TEE Compatibility (`0.18.0` Pin)
 - **Rust program:** `ephemeral-rollups-sdk = { version = "0.18", features = ["anchor", "access-control", "vrf"] }` on **Anchor `1.0.2` / Agave `3.1.9` / Rust `1.89`**.
-- **Client & Frontend:** Exact-pinned `@magicblock-labs/ephemeral-rollups-sdk@0.18.0` so `GetCommitmentSignature` properly tracks Validator v2 outbox settlement receipts on `devnet-us.magicblock.app` while preserving compatibility with v1 TEE endpoints (`devnet-tee.magicblock.app`).
+- **Client & Frontend:** Exact-pinned `@magicblock-labs/ephemeral-rollups-sdk@0.18.0` running against `devnet-tee.magicblock.app` (`magicblock-core 1.1.1`) using `getAuthToken`, `EphemeralPermission` CPIs, and `GetCommitmentSignature`.
 
 ---
 
@@ -145,16 +163,16 @@ This drops VRF identity validation from **>271,000 CU to ~0 runtime CU**, allowi
 paymaybe/
 ├── programs/pay-maybe/
 │   ├── Cargo.toml                 # Anchor 1.0.2 + ephemeral-rollups-sdk 0.18
-│   └── src/lib.rs                 # On-chain program (StoreVault + BuyerAccount + VRF + ER)
+│   └── src/lib.rs                 # Hardened StoreVault + BuyerAccount + TEE Permissions + VRF
 ├── client/
-│   └── src/milestone0-probe.ts    # End-to-end Devnet + MagicBlock ER/VRF probe
+│   └── src/milestone0-probe.ts    # 14-step live Devnet + TEE Privacy + VRF + Security Audit probe
 ├── frontend/
-│   ├── src/app/page.tsx           # Storefront, Private Spin Modal, Vault Drawer
-│   ├── src/hooks/usePayMaybe.ts   # Real Devnet L1 + MagicBlock ER/VRF transaction hook
+│   ├── src/app/page.tsx           # Storefront, Private TEE Spin Modal, Vault Drawer
+│   ├── src/hooks/usePayMaybe.ts   # Real Devnet L1 + MagicBlock TEE JWT + VRF transaction hook
 │   └── src/idl/pay_maybe.json     # Synced compiled Anchor 1.0.2 IDL
 └── .github/workflows/
-    ├── build.yml                  # CI: Next.js build + Anchor 1.0.2 / Agave 3.1.9 build
-    └── deploy-devnet.yml          # 1-click Devnet deploy + IDL sync + live Milestone 0 probe
+    ├── build.yml                  # CI: Strict TS/Next.js + Client + Anchor 1.0.2 / Agave 3.1.9 build
+    └── deploy-devnet.yml          # Secure Devnet upgrade + IDL sync + live Milestone 0 probe
 ```
 
 ---
@@ -164,8 +182,8 @@ paymaybe/
 ### Live Demo (Zero Setup)
 1. Open **[https://paymaybe-w298.vercel.app/](https://paymaybe-w298.vercel.app/)**.
 2. Switch **Phantom** to **Solana Devnet** (Settings → Developer Settings → Testnet Mode).
-3. Click **Buy Now** on any item (e.g., **Espresso Pass · 0.02 SOL**).
-4. Click **Verify Privacy** in the modal to query the MagicBlock TEE RPC without an auth token (`{ "value": null }`), watch the live MagicBlock VRF callback reveal your tier, and open **Vault** to **Claim SOL** or **Sell Shards → SOL** anytime on L1.
+3. Click **Buy Now** on any item (e.g., **Espresso Pass · 0.02 SOL**), approve the L1 checkout+delegation tx, sign the MagicBlock TEE auth challenge, and watch the live **Dual-Read TEE Privacy Proof** (`Stranger: null` vs `Owner JWT: 136 bytes`) + live MagicBlock VRF roll.
+4. Open **Vault** to **Claim SOL** or **Sell Shards → Instant SOL** anytime on L1.
 
 ### Run Locally
 ```bash
@@ -174,7 +192,7 @@ cd frontend
 npm install --legacy-peer-deps
 npm run dev
 
-# Run live Milestone 0 Devnet + MagicBlock ER/VRF probe
+# Run live Milestone 0 Devnet + MagicBlock TEE/VRF & Security probe
 cd ../client
 npm install --legacy-peer-deps
 PROGRAM_ID=BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX npm run probe
@@ -184,6 +202,7 @@ PROGRAM_ID=BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX npm run probe
 
 ## 8. Built With
 - **Solana (Agave 3.1.9)** & **Anchor 1.0.2**
-- **MagicBlock Ephemeral Rollups (`ephemeral-rollups-sdk` 0.18 / `@magicblock-labs/ephemeral-rollups-sdk@0.18.0`)**
+- **MagicBlock Private Ephemeral Rollups (Intel TDX TEE + Permission Program `ACLseoPoy...`)**
+- **MagicBlock SDK (`ephemeral-rollups-sdk` 0.18 / `@magicblock-labs/ephemeral-rollups-sdk@0.18.0`)**
 - **MagicBlock VRF (`Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz`)**
 - **Next.js 15 + React 19 + Tailwind CSS + Framer Motion + Solana Wallet Adapter**
