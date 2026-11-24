@@ -10,6 +10,11 @@ use ephemeral_rollups_sdk::vrf::types::SerializableAccountMeta;
 
 declare_id!("BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX");
 
+// Compile-time scoped VRF identity PDA (avoids runtime pure-Rust curve25519 CU exhaustion in vrf_callback)
+pub const SCOPED_VRF_IDENTITY: Pubkey = Pubkey::new_from_array(
+    ephemeral_rollups_sdk::vrf::consts::scoped_vrf_identity_const(&crate::ID).0,
+);
+
 // Rebate tiers in basis points (out of 10000)
 pub const TIER_FREE: u16 = 10_000;      // 100% FREE (1% chance)
 pub const TIER_HALF: u16 = 5_000;       // 50% off   (6% chance)
@@ -419,6 +424,9 @@ pub struct RequestSpin<'info> {
 #[vrf_callback]
 #[derive(Accounts)]
 pub struct CallbackResolveSpin<'info> {
+    /// Scoped VRF identity PDA, bound to this program (evaluated at compile time -> 0 runtime CU).
+    #[account(address = SCOPED_VRF_IDENTITY)]
+    pub vrf_program_identity: Signer<'info>,
     #[account(mut)]
     pub buyer_account: Account<'info, BuyerAccount>,
 }
