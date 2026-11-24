@@ -1,13 +1,25 @@
-# PayMaybe — Confidential "Buy Now, Pay Maybe" Checkout on Solana & MagicBlock TEE
+# PayMaybe — Buy Now, Pay Maybe
 
-> **MagicBlock Solana Blitz v10 (Nov 20–27, 2026) · Theme: Entertainment Finance**  
-> *Every checkout gives you an instant, provably fair chance to get your purchase 100% free — privately inside a MagicBlock Intel TDX Trusted Execution Environment, with SOL-backed Loyalty Shards you can sell back to the pool anytime.*
+<p align="center"><img src="docs/paymaybe-hero.gif" width="720" alt="PayMaybe checkout demo — the receipt is the slot machine"></p>
+
+**The receipt is the slot machine.** Every checkout comes with one provably fair spin. Get 25%, half, or the whole thing back — plus SOL-backed Loyalty Shards every time — and nobody else can see your spin while it runs.
+
+> **MagicBlock Solana Blitz v10 (Nov 20–27, 2026) · Theme: Entertainment Finance**
 
 - **Live App (Vercel):** [https://paymaybe-w298.vercel.app/](https://paymaybe-w298.vercel.app/)
 - **Live Devnet Program ID:** [`BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX`](https://explorer.solana.com/address/BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX?cluster=devnet)
 - **Live Funded StoreVault PDA (`store_v2`):** [`41ejxCLF7k88c5sH1qiM17Y5dRNbWmzFekim7ynDxN9r`](https://explorer.solana.com/address/41ejxCLF7k88c5sH1qiM17Y5dRNbWmzFekim7ynDxN9r?cluster=devnet) *(Authority: `FRFw8oAUQsHn3fZfis4dGcRhAXanoMo77TaKnm6cwLgf`)*
 - **CI (Anchor 1.0.2 + Strict Frontend + Client):** [GitHub Actions CI Run (All Green)](https://github.com/tobeie/paymaybe/actions/runs/45308962241)
 - **Live Devnet + MagicBlock TEE / VRF & Security Audit Probe:** [GitHub Actions Deploy & Probe Run #6 (All Green)](https://github.com/tobeie/paymaybe/actions/runs/45309013497)
+
+---
+
+## Try It in 60 Seconds
+
+1. Open **[https://paymaybe-w298.vercel.app/](https://paymaybe-w298.vercel.app/)**.
+2. Switch **Phantom** to **Solana Devnet** (Settings → Developer Settings → Testnet Mode) and grab free test SOL at [faucet.solana.com](https://faucet.solana.com) if needed.
+3. Pick any hanging price tag from the shelf (e.g., **Espresso Pass · 0.02 SOL**), click **Buy and spin**, approve the checkout transaction, sign the private session prompt, and watch the thermal receipt print each chain step, spin the `YOU PAY` odometer reel, and slam the rubber stamp.
+4. Click **Compare with a stranger's view** to inspect the live side-by-side carbon copy (`Your copy` via TEE JWT vs `A stranger's copy` returning `null`), open **Vault** (`/vault`) to claim cashback or sell shards anytime, and open **Fair play** (`/fair`) to see your real rolls pinned on the `0–9,999` strip.
 
 ---
 
@@ -43,7 +55,7 @@ Directly inspired by MagicBlock CEO Andrea Fortugno's *"Buy Now, Pay Maybe"* Ent
 ```text
   Buyer (Phantom on Devnet)          Solana L1 (Custody)              MagicBlock TEE (Intel TDX + VRF)
   ─────────────────────────          ───────────────────              ────────────────────────────────
-  1. Click "Buy Now" ──────────────► StoreVault PDA (undelegated)
+  1. Click "Buy and spin" ─────────► StoreVault PDA (undelegated)
      (init_buyer + deposit_checkout   • Enforces fixed catalog price
       + delegate_buyer)               • Locks active_escrow + shard reserve
                                       • SpinState: Idle -> Paid
@@ -161,11 +173,13 @@ This drops VRF callback execution from **>271,190 CU (out-of-compute crash)** to
 
 ```text
 paymaybe/
+├── docs/
+│   └── paymaybe-hero.gif               # Checkout receipt demo GIF
 ├── programs/pay-maybe/
-│   ├── Cargo.toml                 # Anchor 1.0.2 + ephemeral-rollups-sdk 0.18
-│   └── src/lib.rs                 # Hardened StoreVault + BuyerAccount + TEE Permissions + VRF
+│   ├── Cargo.toml                      # Anchor 1.0.2 + ephemeral-rollups-sdk 0.18
+│   └── src/lib.rs                      # Hardened StoreVault + BuyerAccount + TEE Permissions + VRF
 ├── client/
-│   └── src/milestone0-probe.ts    # 14-step live Devnet + TEE Privacy + VRF + Security Audit probe
+│   └── src/milestone0-probe.ts         # 12-step live Devnet + TEE Privacy + VRF & Security probe
 ├── frontend/
 │   ├── src/app/page.tsx                # Shop: felt counter, hero receipt & hanging price tags
 │   ├── src/app/checkout/[id]/page.tsx  # Live thermal receipt printer, odometer reel & TEE carbon copy
@@ -174,21 +188,14 @@ paymaybe/
 │   ├── src/hooks/usePayMaybe.ts        # Real Devnet L1 + MagicBlock TEE JWT + VRF transaction hook
 │   └── src/idl/pay_maybe.json          # Synced compiled Anchor 1.0.2 IDL
 └── .github/workflows/
-    ├── build.yml                  # CI: Strict TS/Next.js + Client + Anchor 1.0.2 / Agave 3.1.9 build
-    └── deploy-devnet.yml          # Secure Devnet upgrade + IDL sync + live Milestone 0 probe
+    ├── build.yml                       # CI: Strict TS/Next.js + Client + Anchor 1.0.2 / Agave 3.1.9 build
+    └── deploy-devnet.yml               # Secure Devnet upgrade + IDL sync + live Milestone 0 probe
 ```
 
 ---
 
-## 7. Quickstart (Try Locally or on Vercel)
+## 7. Run Locally
 
-### Live Demo (Zero Setup)
-1. Open **[https://paymaybe-w298.vercel.app/](https://paymaybe-w298.vercel.app/)**.
-2. Switch **Phantom** to **Solana Devnet** (Settings → Developer Settings → Testnet Mode).
-3. Pick any hanging price tag from the shelf (e.g., **Espresso Pass · 0.02 SOL**), click **Buy and spin**, approve the L1 escrow + delegation tx, sign the MagicBlock TEE auth challenge, and watch the live thermal receipt print each chain step, spin the `YOU PAY` odometer reel, and slam the rubber stamp.
-4. Click **Compare with a stranger's view** to inspect the live side-by-side carbon copy (`Your copy` via TEE JWT vs `A stranger's copy` returning `null`), open **Vault** (`/vault`) to claim cashback or sell shards anytime, and check **Fair play** (`/fair`) to see your rolls pinned on the `0–9,999` strip.
-
-### Run Locally
 ```bash
 # Run frontend locally
 cd frontend
@@ -208,4 +215,4 @@ PROGRAM_ID=BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX npm run probe
 - **MagicBlock Private Ephemeral Rollups (Intel TDX TEE + Permission Program `ACLseoPoy...`)**
 - **MagicBlock SDK (`ephemeral-rollups-sdk` 0.18 / `@magicblock-labs/ephemeral-rollups-sdk@0.18.0`)**
 - **MagicBlock VRF (`Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz`)**
-- **Next.js 15 + React 19 + Tailwind CSS + Framer Motion + Solana Wallet Adapter**
+- **Next.js 15 + React 19 + Tailwind CSS + Solana Wallet Adapter**
