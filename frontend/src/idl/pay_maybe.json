@@ -10,8 +10,9 @@
     {
       "name": "callback_resolve_spin",
       "docs": [
-        "Instruction 5 (MagicBlock VRF Callback): Protected by #[vrf_callback] on context.",
-        "Maps verified randomness to rebate tier + Loyalty Shards."
+        "Instruction 5 (MagicBlock VRF Callback): Protected by #[vrf_callback] + SCOPED_VRF_IDENTITY.",
+        "Enforces PendingVrf -> Resolved, immediately zeroes pending_amount, and evaluates unbiased",
+        "64-bit randomness against StoreVault's configured tier_odds_bps."
       ],
       "discriminator": [
         41,
@@ -77,7 +78,10 @@
                   117,
                   121,
                   101,
-                  114
+                  114,
+                  95,
+                  118,
+                  50
                 ]
               },
               {
@@ -103,7 +107,10 @@
                   116,
                   111,
                   114,
-                  101
+                  101,
+                  95,
+                  118,
+                  50
                 ]
               },
               {
@@ -134,8 +141,9 @@
     {
       "name": "commit_and_undelegate_buyer",
       "docs": [
-        "Instruction 5b (MagicBlock ER): Commits resolved BuyerAccount and undelegates back to L1.",
-        "Calls exit(&crate::ID)? BEFORE MagicIntentBundleBuilder per MagicBlock Rule #3."
+        "Instruction 5b (MagicBlock TEE / ER): Closes active EphemeralPermission (refunding its",
+        "rent to BuyerAccount), calls exit(&crate::ID)? per MagicBlock Rule #3, and commits +",
+        "undelegates BuyerAccount back to Solana L1."
       ],
       "discriminator": [
         65,
@@ -165,7 +173,10 @@
                   117,
                   121,
                   101,
-                  114
+                  114,
+                  95,
+                  118,
+                  50
                 ]
               },
               {
@@ -179,6 +190,80 @@
               }
             ]
           }
+        },
+        {
+          "name": "permission",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  114,
+                  109,
+                  105,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110,
+                  58
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer_account"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                136,
+                161,
+                10,
+                196,
+                33,
+                152,
+                1,
+                214,
+                246,
+                106,
+                29,
+                60,
+                6,
+                152,
+                192,
+                102,
+                169,
+                175,
+                212,
+                217,
+                180,
+                252,
+                231,
+                71,
+                151,
+                141,
+                209,
+                5,
+                168,
+                212,
+                103,
+                82
+              ]
+            }
+          }
+        },
+        {
+          "name": "permission_program",
+          "address": "ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1"
+        },
+        {
+          "name": "ephemeral_vault",
+          "writable": true,
+          "address": "MagicVau1t999999999999999999999999999999999"
         },
         {
           "name": "magic_program",
@@ -195,7 +280,7 @@
     {
       "name": "delegate_buyer",
       "docs": [
-        "Instruction 2c (Solana L1): Delegates BuyerAccount PDA to MagicBlock ER/TEE validator.",
+        "Instruction 2c (Solana L1): Idempotently delegates BuyerAccount PDA to MagicBlock TEE/ER validator.",
         "Uses UncheckedAccount on #[account(mut, del)] per MagicBlock Rule #2."
       ],
       "discriminator": [
@@ -370,7 +455,8 @@
     {
       "name": "deposit_checkout",
       "docs": [
-        "Instruction 2b (Solana L1): Escrows checkout payment into undelegated L1 StoreVault."
+        "Instruction 2b (Solana L1): Escrows fixed catalog checkout payment into L1 StoreVault",
+        "and transitions BuyerAccount -> SpinState::Paid (strictly 1 spin per payment)."
       ],
       "discriminator": [
         247,
@@ -395,7 +481,10 @@
                   117,
                   121,
                   101,
-                  114
+                  114,
+                  95,
+                  118,
+                  50
                 ]
               },
               {
@@ -421,7 +510,10 @@
                   116,
                   111,
                   114,
-                  101
+                  101,
+                  95,
+                  118,
+                  50
                 ]
               },
               {
@@ -456,7 +548,8 @@
     {
       "name": "enable_privacy",
       "docs": [
-        "Instruction 3 (MagicBlock ER / TEE): Marks session privacy active on ER."
+        "Instruction 3 (MagicBlock TEE): Creates or updates the real MagicBlock Permission Program",
+        "EphemeralPermission PDA via CPI so only the authenticated buyer can read their ER state."
       ],
       "discriminator": [
         41,
@@ -470,6 +563,11 @@
       ],
       "accounts": [
         {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
           "name": "buyer_account",
           "writable": true,
           "pda": {
@@ -481,7 +579,10 @@
                   117,
                   121,
                   101,
-                  114
+                  114,
+                  95,
+                  118,
+                  50
                 ]
               },
               {
@@ -497,9 +598,82 @@
           }
         },
         {
-          "name": "buyer",
+          "name": "permission",
           "writable": true,
-          "signer": true
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  114,
+                  109,
+                  105,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110,
+                  58
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer_account"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                136,
+                161,
+                10,
+                196,
+                33,
+                152,
+                1,
+                214,
+                246,
+                106,
+                29,
+                60,
+                6,
+                152,
+                192,
+                102,
+                169,
+                175,
+                212,
+                217,
+                180,
+                252,
+                231,
+                71,
+                151,
+                141,
+                209,
+                5,
+                168,
+                212,
+                103,
+                82
+              ]
+            }
+          }
+        },
+        {
+          "name": "permission_program",
+          "address": "ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1"
+        },
+        {
+          "name": "ephemeral_vault",
+          "writable": true,
+          "address": "MagicVau1t999999999999999999999999999999999"
+        },
+        {
+          "name": "magic_program",
+          "address": "Magic11111111111111111111111111111111111111"
         }
       ],
       "args": []
@@ -507,7 +681,8 @@
     {
       "name": "init_buyer",
       "docs": [
-        "Instruction 2a (Solana L1): Initializes BuyerAccount PDA (and records checkout escrow)."
+        "Instruction 2a (Solana L1): Idempotently initializes BuyerAccount PDA and pre-funds",
+        "rent for its ER-local EphemeralPermission on the MagicBlock TEE validator."
       ],
       "discriminator": [
         170,
@@ -532,7 +707,10 @@
                   117,
                   121,
                   101,
-                  114
+                  114,
+                  95,
+                  118,
+                  50
                 ]
               },
               {
@@ -557,7 +735,10 @@
                   116,
                   111,
                   114,
-                  101
+                  101,
+                  95,
+                  118,
+                  50
                 ]
               },
               {
@@ -583,7 +764,7 @@
     {
       "name": "init_store",
       "docs": [
-        "Instruction 1 (Solana L1): Initializes StoreVault PDA and seeds the cashback & shard reserve."
+        "Instruction 1 (Solana L1): Initializes StoreVault PDA and seeds cashback & shard reserve."
       ],
       "discriminator": [
         250,
@@ -608,7 +789,10 @@
                   116,
                   111,
                   114,
-                  101
+                  101,
+                  95,
+                  118,
+                  50
                 ]
               },
               {
@@ -752,7 +936,8 @@
     {
       "name": "request_spin",
       "docs": [
-        "Instruction 4 (MagicBlock ER / L1 VRF): Requests verifiable randomness from MagicBlock VRF."
+        "Instruction 4 (MagicBlock TEE / ER VRF): Consumes Paid state -> PendingVrf and requests",
+        "verifiable randomness from MagicBlock VRF. Strictly enforces 1 spin per paid checkout."
       ],
       "discriminator": [
         186,
@@ -782,7 +967,10 @@
                   117,
                   121,
                   101,
-                  114
+                  114,
+                  95,
+                  118,
+                  50
                 ]
               },
               {
@@ -845,6 +1033,64 @@
           }
         }
       ]
+    },
+    {
+      "name": "withdraw_merchant_funds",
+      "docs": [
+        "Instruction 7 (Solana L1): Allows StoreVault authority to withdraw earned merchant revenue",
+        "while strictly protecting vault rent, Loyalty Shard buyback reserve, and active buyer escrows."
+      ],
+      "discriminator": [
+        119,
+        217,
+        96,
+        56,
+        150,
+        142,
+        102,
+        148
+      ],
+      "accounts": [
+        {
+          "name": "store_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  111,
+                  114,
+                  101,
+                  95,
+                  118,
+                  50
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "store_vault"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -890,6 +1136,19 @@
       ]
     },
     {
+      "name": "MerchantWithdrawn",
+      "discriminator": [
+        173,
+        197,
+        88,
+        97,
+        136,
+        157,
+        241,
+        147
+      ]
+    },
+    {
       "name": "PrivacyEnabled",
       "discriminator": [
         157,
@@ -924,26 +1183,56 @@
     },
     {
       "code": 6001,
-      "name": "InvalidPrice",
-      "msg": "Invalid price: must be > 0"
+      "name": "InvalidItem",
+      "msg": "Invalid catalog item id"
     },
     {
       "code": 6002,
-      "name": "SpinAlreadyPending",
-      "msg": "Spin already pending — wait for VRF callback"
+      "name": "InvalidPrice",
+      "msg": "Invalid price: must match fixed on-chain catalog price"
     },
     {
       "code": 6003,
+      "name": "InvalidAmount",
+      "msg": "Invalid amount: must be > 0"
+    },
+    {
+      "code": 6004,
+      "name": "SpinAlreadyPending",
+      "msg": "Spin already pending — wait for VRF callback or settle current checkout"
+    },
+    {
+      "code": 6005,
+      "name": "NoPaidCheckout",
+      "msg": "No paid checkout available to spin — pay on L1 first"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidSpinState",
+      "msg": "Invalid spin state for VRF callback"
+    },
+    {
+      "code": 6007,
+      "name": "UnclaimedRebatePending",
+      "msg": "Claim pending cashback rebate before starting a new checkout"
+    },
+    {
+      "code": 6008,
       "name": "InsufficientShards",
       "msg": "Insufficient shard balance"
     },
     {
-      "code": 6004,
+      "code": 6009,
       "name": "InsufficientPoolReserve",
       "msg": "Insufficient pool reserve for payout"
     },
     {
-      "code": 6005,
+      "code": 6010,
+      "name": "InsufficientWithdrawableFunds",
+      "msg": "Insufficient withdrawable merchant funds above protected reserves"
+    },
+    {
+      "code": 6011,
       "name": "Unauthorized",
       "msg": "Unauthorized"
     }
@@ -981,6 +1270,23 @@
           {
             "name": "pending_amount",
             "type": "u64"
+          },
+          {
+            "name": "unsettled_escrow_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "tier_odds_bps",
+            "type": {
+              "array": [
+                "u16",
+                4
+              ]
+            }
+          },
+          {
+            "name": "last_roll_bps",
+            "type": "u16"
           },
           {
             "name": "last_rebate_bps",
@@ -1034,6 +1340,26 @@
       }
     },
     {
+      "name": "MerchantWithdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "remaining_lamports",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "PrivacyEnabled",
       "type": {
         "kind": "struct",
@@ -1071,8 +1397,8 @@
             "type": "u64"
           },
           {
-            "name": "roll",
-            "type": "u8"
+            "name": "roll_bps",
+            "type": "u16"
           }
         ]
       }
@@ -1084,6 +1410,9 @@
         "variants": [
           {
             "name": "Idle"
+          },
+          {
+            "name": "Paid"
           },
           {
             "name": "PendingVrf"
@@ -1122,6 +1451,10 @@
           },
           {
             "name": "total_shard_reserve",
+            "type": "u64"
+          },
+          {
+            "name": "active_escrow_lamports",
             "type": "u64"
           },
           {
