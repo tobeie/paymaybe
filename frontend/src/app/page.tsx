@@ -57,13 +57,15 @@ export default function ShopPage() {
 
       <div className="shelf wrap" id="shelf">
         <div className="section-head">
-          <h2>Today&apos;s shelf</h2>
-          <p>
-            Prices are in devnet SOL. Each item includes one spin at checkout.
-            {minutesUntilNext !== null
-              ? ` New drop in ${Math.floor(minutesUntilNext / 60)}h ${minutesUntilNext % 60}m.`
-              : ""}
-          </p>
+          <div className="shelf-head-row">
+            <h2>Today&apos;s shelf</h2>
+            {minutesUntilNext !== null && (
+              <span className="shelf-meta">
+                Restocks in {Math.floor(minutesUntilNext / 60)}h {minutesUntilNext % 60}m
+              </span>
+            )}
+          </div>
+          <p>One spin with every item. Paid in devnet SOL.</p>
         </div>
         <ul className="tags">
           {shelfItems.map((item) => (
