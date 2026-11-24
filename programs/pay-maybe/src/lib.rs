@@ -269,7 +269,9 @@ pub mod pay_maybe {
             pubkey: buyer_key,
         }];
 
-        if ctx.accounts.permission.lamports() == 0 {
+        // EphemeralPermission is a zero-lamport ephemeral account (rent lives in ephemeral_vault),
+        // so existence must be checked via data_is_empty(), never lamports() == 0.
+        if ctx.accounts.permission.data_is_empty() {
             CreateEphemeralPermissionCpi {
                 payer: ctx.accounts.buyer_account.to_account_info(),
                 permissioned_account: ctx.accounts.buyer_account.to_account_info(),
@@ -423,7 +425,9 @@ pub mod pay_maybe {
         let bump = ctx.accounts.buyer_account.bump;
         let signers: &[&[u8]] = &[BUYER_SEED, store_key.as_ref(), buyer_key.as_ref(), &[bump]];
 
-        if ctx.accounts.permission.lamports() > 0 {
+        // EphemeralPermission holds 0 lamports on-account (rent is tracked in ephemeral_vault),
+        // so check !data_is_empty() before closing & refunding rent to buyer_account.
+        if !ctx.accounts.permission.data_is_empty() {
             CloseEphemeralPermissionCpi {
                 payer: ctx.accounts.buyer_account.to_account_info(),
                 permissioned_account: ctx.accounts.buyer_account.to_account_info(),
