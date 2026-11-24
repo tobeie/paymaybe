@@ -6,7 +6,7 @@ import { HeroReceipt } from "../components/HeroReceipt";
 import { ItemIcon } from "../components/ItemIcon";
 
 export default function ShopPage() {
-  const { items: shelfItems, dropNo, minutesUntilNext } = useShelf();
+  const { items: shelfItems, minutesUntilNext } = useShelf();
   const scrollToShelf = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
     const el = document.getElementById("shelf");
@@ -59,10 +59,10 @@ export default function ShopPage() {
         <div className="section-head">
           <h2>Today&apos;s shelf</h2>
           <p>
-            {dropNo !== null && minutesUntilNext !== null
-              ? `Drop #${dropNo} · new items at 00:00 UTC, next in ${Math.floor(minutesUntilNext / 60)}h ${minutesUntilNext % 60}m. `
+            Prices are in devnet SOL. Each item includes one spin at checkout.
+            {minutesUntilNext !== null
+              ? ` New drop in ${Math.floor(minutesUntilNext / 60)}h ${minutesUntilNext % 60}m.`
               : ""}
-            The four price tiers are fixed on-chain. The items rotate daily. Devnet SOL, one provably fair spin each, nothing ships.
           </p>
         </div>
         <ul className="tags">
