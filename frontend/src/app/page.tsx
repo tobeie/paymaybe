@@ -1,12 +1,23 @@
 "use client";
 import Link from "next/link";
 import { formatSolShort } from "../lib/constants";
-import { useShelf } from "../lib/shelf";
+import { useShelf, useRestockCountdown } from "../lib/shelf";
 import { HeroReceipt } from "../components/HeroReceipt";
 import { ItemIcon } from "../components/ItemIcon";
 
+function RestockPill() {
+  const countdown = useRestockCountdown();
+  return (
+    <span className="restock-pill" aria-label={countdown ? `Restocks in ${countdown}` : "Daily restock timer"}>
+      <span className="restock-dot" aria-hidden="true" />
+      <span>Restocks in</span>
+      <span className="restock-time">{countdown ?? "--:--:--"}</span>
+    </span>
+  );
+}
+
 export default function ShopPage() {
-  const { items: shelfItems, minutesUntilNext } = useShelf();
+  const { items: shelfItems } = useShelf();
   const scrollToShelf = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
     const el = document.getElementById("shelf");
@@ -59,11 +70,7 @@ export default function ShopPage() {
         <div className="section-head">
           <div className="shelf-head-row">
             <h2>Today&apos;s shelf</h2>
-            {minutesUntilNext !== null && (
-              <span className="shelf-meta">
-                Restocks in {Math.floor(minutesUntilNext / 60)}h {minutesUntilNext % 60}m
-              </span>
-            )}
+            <RestockPill />
           </div>
           <p>One spin with every item. Paid in devnet SOL.</p>
         </div>
