@@ -9,8 +9,8 @@
 - **Live App (Vercel):** [https://paymaybe-w298.vercel.app/](https://paymaybe-w298.vercel.app/)
 - **Live Devnet Program ID:** [`BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX`](https://explorer.solana.com/address/BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX?cluster=devnet)
 - **Live Funded StoreVault PDA (`store_v2`):** [`41ejxCLF7k88c5sH1qiM17Y5dRNbWmzFekim7ynDxN9r`](https://explorer.solana.com/address/41ejxCLF7k88c5sH1qiM17Y5dRNbWmzFekim7ynDxN9r?cluster=devnet) *(Authority: `FRFw8oAUQsHn3fZfis4dGcRhAXanoMo77TaKnm6cwLgf`)*
-- **CI (Anchor 1.0.2 + Strict Frontend + Client):** [GitHub Actions CI Run (All Green)](https://github.com/tobeie/paymaybe/actions/runs/45308962241)
-- **Live Devnet + MagicBlock TEE / VRF & Security Audit Probe:** [GitHub Actions Deploy & Probe Run #6 (All Green)](https://github.com/tobeie/paymaybe/actions/runs/45309013497)
+- **CI (Anchor 1.0.2 + Strict Frontend + Client):** [GitHub Actions CI Run (All Green)](https://github.com/tobeie/paymaybe/actions/runs/45357176364)
+- **Live Devnet + MagicBlock TEE / VRF & Security Audit Probe:** [GitHub Actions Deploy & Probe Run (All Green)](https://github.com/tobeie/paymaybe/actions/runs/45357201971)
 
 ---
 
@@ -120,6 +120,7 @@ Every instruction and negative exploit test in [milestone0-probe.ts](client/src/
 | **10** | Solana Devnet | L1 Settlement Commit (`ProcessUndelegation` via SDK 0.18.0 `GetCommitmentSignature`) | [`5iUEeGDH...`](https://explorer.solana.com/tx/5iUEeGDH8MNa83n33r7VfqpGzfvLZYXWCuawF7R4PVQS92DTLeGnqnRgChX1wEqv7dQAovBQbkRqHpT66Vds1yv8?cluster=devnet) |
 | **11** | Solana Devnet | `claim_or_sell_shards` (Paid `5,001,000` lamports = 0.005 SOL cashback + 10 sold shards) | [`5N7wbEAJ...`](https://explorer.solana.com/tx/5N7wbEAJwLkCcCai2FLgmV3WtBAHcTWHSnN6BwH74ffv7eBZm5n42e6Stn9Z2Y8UFtVEJftctmq2RWtftMjRrrYo?cluster=devnet) |
 | **12** | Solana Devnet | `withdraw_merchant_funds` (Reserve-rug rejected; withdrew `0.001 SOL` safely) | [`2Ctq7rRv...`](https://explorer.solana.com/tx/2Ctq7rRv8npuebbWsrZcsocQGHZiXxjr2k8qz2eTmQ4tKEWEczFpMHRQciKNq4xMmmHjCVmHhz7F4JfT8iu5yDTw?cluster=devnet) |
+| **13** | Solana Devnet | `cancel_spin` (Idle cancel rejected; paid-but-unspun `0.02 SOL` fully refunded) | [`9EDMxS2K...`](https://explorer.solana.com/tx/9EDMxS2KBcQa44EaTRMTJ3nqDhojH4FRQZhQivXBL9ghk4fiDST7umX8u3vjNZdFK3PhZZFZ1FG95frVq4KgFJP?cluster=devnet) |
 
 ---
 
@@ -164,6 +165,9 @@ pub struct CallbackResolveSpin<'info> {
 ```
 This drops VRF callback execution from **>271,190 CU (out-of-compute crash)** to **3,479 CU total** on `devnet-tee.magicblock.app` (verified live in tx `36QbTVqt...`).
 
+### Zero-Lamport `EphemeralPermission` Existence Check (Multi-Checkout TEE Fix)
+During live multi-checkout testing on `devnet-tee.magicblock.app`, we observed that created `EphemeralPermission` accounts hold **`0` lamports** (`dataLen: 101`, `owner: ACLseoPoy...`) because ephemeral rent is stored in `ephemeral_vault`. Checking `permission.lamports() == 0` / `> 0` (as in older examples) skips `CloseEphemeralPermissionCpi` on Checkout #1 and fails Checkout #2 on `CreateEphemeralPermissionCpi`. Checking `permission.data_is_empty()` / `!permission.data_is_empty()` makes `Create` / `Update` / `Close` idempotent across unlimited checkouts (verified live in [Run `45357201971`](https://github.com/tobeie/paymaybe/actions/runs/45357201971)).
+
 ### Validator v2 + TEE Compatibility (`0.18.0` Pin)
 - **Rust program:** `ephemeral-rollups-sdk = { version = "0.18", features = ["anchor", "access-control", "vrf"] }` on **Anchor `1.0.2` / Agave `3.1.9` / Rust `1.89`**.
 - **Client & Frontend:** Exact-pinned `@magicblock-labs/ephemeral-rollups-sdk@0.18.0` running against `devnet-tee.magicblock.app` (`magicblock-core 1.1.1`) using `getAuthToken`, `EphemeralPermission` CPIs, and `GetCommitmentSignature`.
@@ -180,7 +184,7 @@ paymaybe/
 │   ├── Cargo.toml                      # Anchor 1.0.2 + ephemeral-rollups-sdk 0.18
 │   └── src/lib.rs                      # Hardened StoreVault + BuyerAccount + TEE Permissions + VRF
 ├── client/
-│   └── src/milestone0-probe.ts         # 12-step live Devnet + TEE Privacy + VRF & Security probe
+│   └── src/milestone0-probe.ts         # 13-step live Devnet + TEE Privacy + VRF & Security probe
 ├── frontend/
 │   ├── src/app/page.tsx                # Shop: felt counter, hero receipt & hanging price tags
 │   ├── src/app/checkout/[id]/page.tsx  # Live thermal receipt printer, odometer reel & TEE carbon copy
