@@ -18,7 +18,7 @@
 
 1. Open **[https://paymaybe-w298.vercel.app/](https://paymaybe-w298.vercel.app/)**.
 2. Switch **Phantom** to **Solana Devnet** (Settings → Developer Settings → Testnet Mode) and grab free test SOL at [faucet.solana.com](https://faucet.solana.com) if needed.
-3. Pick any hanging price tag from the shelf (e.g., **Espresso Pass · 0.02 SOL**), click **Buy and spin**, approve the checkout transaction, sign the private session prompt, and watch the thermal receipt print each chain step, spin the `YOU PAY` odometer reel, and slam the rubber stamp.
+3. Pick any hanging price tag from the shelf (e.g., **Ephemeral Espresso · 0.02 SOL**), click **Buy and spin**, approve the checkout transaction, sign the private session prompt, and watch the thermal receipt print each chain step, spin the `YOU PAY` odometer reel, and slam the rubber stamp.
 4. Click **Compare with a stranger's view** to inspect the live side-by-side carbon copy (`Your copy` via TEE JWT vs `A stranger's copy` returning `null`), open **Vault** (`/vault`) to claim cashback or sell shards anytime, and open **Fair play** (`/fair`) to see your real rolls pinned on the `0–9,999` strip.
 
 ---

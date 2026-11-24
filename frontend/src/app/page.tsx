@@ -10,8 +10,9 @@ function RestockPill() {
   return (
     <span className="restock-pill" aria-label={countdown ? `Restocks in ${countdown}` : "Daily restock timer"}>
       <span className="restock-dot" aria-hidden="true" />
-      <span>Restocks in</span>
-      <span className="restock-time">{countdown ?? "--:--:--"}</span>
+      <span>
+        Restocks in <span className="restock-time">{countdown ?? "--:--:--"}</span>
+      </span>
     </span>
   );
 }

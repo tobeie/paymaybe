@@ -66,11 +66,11 @@ export interface CatalogItem {
 export const ITEMS: readonly CatalogItem[] = [
   {
     id: 0,
-    name: "Espresso Pass",
+    name: "Ephemeral Espresso",
     icon: "cup",
     priceLamports: 20_000_000n,
     priceDisplay: "0.02 SOL",
-    description: "A month of single-origin pours, redeemed at the counter.",
+    description: "Single-origin, brewed fast. Gone before the block finishes.",
   },
   {
     id: 1,
@@ -116,7 +116,7 @@ export interface ShelfEntry {
 export const SHELF_POOL: Readonly<Record<number, readonly ShelfEntry[]>> = {
   // Tier 0 · 0.02 SOL
   0: [
-    { name: "Espresso Pass", icon: "cup", description: "A month of single-origin pours, redeemed at the counter." },
+    { name: "Ephemeral Espresso", icon: "cup", description: "Single-origin, brewed fast. Gone before the block finishes." },
     { name: "Slot-Time Latte", icon: "cup", description: "One pour per slot. Foam optional, finality not." },
     { name: "Gasless Chai", icon: "cup", description: "Spiced, warm, and zero fees at the counter." },
     { name: "Lightning Sticker Pack", icon: "bolt", description: "Six stickers for the laptop you deploy from." },
