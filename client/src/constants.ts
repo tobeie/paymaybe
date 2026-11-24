@@ -1,10 +1,16 @@
 import { PublicKey } from "@solana/web3.js";
 
-// Program ID — matches target/deploy/pay_maybe-keypair.json
+// Live Solana Devnet Program ID (upgrade authority held in GitHub Secret DEVNET_DEPLOYER_KEYPAIR)
 export const PROGRAM_ID = new PublicKey("BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX");
 export const DELEGATION_PROGRAM_ID = new PublicKey("DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh");
 export const PERMISSION_PROGRAM_ID = new PublicKey("ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1");
+export const EPHEMERAL_VAULT_ID = new PublicKey("MagicVau1t999999999999999999999999999999999");
 export const VRF_PROGRAM_ID = new PublicKey("Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz");
+
+// PDA seed prefixes (v2 hardened layout)
+export const STORE_SEED = "store_v2";
+export const BUYER_SEED = "buyer_v2";
+export const PERMISSION_SEED = "permission:";
 
 // Validators
 export const TEE_VALIDATOR = new PublicKey("MTEWGuqxUpYZGFJQcp8tLN7x5v9BSeoFHYWQQ3n3xzo");
@@ -29,7 +35,7 @@ export const TIER_HALF = 5000;
 export const TIER_QUARTER = 2500;
 export const TIER_NONE = 0;
 
-// Item catalog
+// Fixed on-chain item catalog (matches ITEM_PRICES_LAMPORTS in programs/pay-maybe/src/lib.rs)
 export const ITEMS = [
   { id: 0, name: "Espresso Pass", emoji: "☕", priceLamports: 20_000_000n, priceDisplay: "0.02 SOL", description: "Single-origin digital espresso access" },
   { id: 1, name: "Founder Hoodie", emoji: "👟", priceLamports: 50_000_000n, priceDisplay: "0.05 SOL", description: "Limited edition physical drop" },

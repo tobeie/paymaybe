@@ -21,8 +21,13 @@ export const STORE_AUTHORITY = (() => {
   }
 })();
 
+export const STORE_SEED = "store_v2";
+export const BUYER_SEED = "buyer_v2";
+export const PERMISSION_SEED = "permission:";
+
 export const DELEGATION_PROGRAM_ID = new PublicKey("DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh");
 export const PERMISSION_PROGRAM_ID = new PublicKey("ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1");
+export const EPHEMERAL_VAULT_ID = new PublicKey("MagicVau1t999999999999999999999999999999999");
 export const VRF_PROGRAM_ID = new PublicKey("Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz");
 export const US_VALIDATOR = new PublicKey("MUS3hc9TCw4cGC12vHNoYcCGzJG1txjgQLZWVoeNHNd");
 export const TEE_VALIDATOR = new PublicKey("MTEWGuqxUpYZGFJQcp8tLN7x5v9BSeoFHYWQQ3n3xzo");
@@ -36,6 +41,7 @@ export const TEE_RPC = "https://devnet-tee.magicblock.app";
 
 export const SHARD_VALUE_LAMPORTS = 100n;
 
+// Fixed catalog — must match ITEM_PRICES_LAMPORTS in programs/pay-maybe/src/lib.rs
 export const ITEMS = [
   { id: 0, name: "Espresso Pass",    emoji: "☕", priceLamports: 20_000_000n,  priceDisplay: "0.02 SOL", description: "Single-origin digital espresso access" },
   { id: 1, name: "Founder Hoodie",   emoji: "👟", priceLamports: 50_000_000n,  priceDisplay: "0.05 SOL", description: "Limited edition physical drop" },
@@ -47,6 +53,10 @@ export const ODDS_DISPLAY = "1% FREE · 6% half-off · 18% quarter-off · Loyalt
 
 export function explorerTxUrl(sig: string): string {
   return `https://explorer.solana.com/tx/${sig}?cluster=devnet`;
+}
+
+export function explorerTeeTxUrl(sig: string): string {
+  return `https://explorer.solana.com/tx/${sig}?cluster=custom&customUrl=${encodeURIComponent(TEE_RPC)}`;
 }
 
 export function explorerAddressUrl(address: string): string {

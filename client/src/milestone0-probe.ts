@@ -1,16 +1,21 @@
 /**
- * PayMaybe — Live Milestone 0 Devnet + MagicBlock ER/VRF Probe
+ * PayMaybe — Live Milestone 0 Devnet + MagicBlock TEE/VRF & Security Probe
  *
- * Proves the complete end-to-end on-chain lifecycle on Solana Devnet + MagicBlock ER:
- *   1. init_store (L1) — seeds StoreVault cashback & shard buyback reserve
- *   2. init_buyer (L1) — initializes BuyerAccount PDA
- *   3. deposit_checkout (L1) — escrows 0.02 SOL into L1 StoreVault
- *   4. delegate_buyer (L1) — delegates BuyerAccount PDA to MagicBlock ER validator
- *   5. enable_privacy (ER) — activates session privacy flag on ER
- *   6. request_spin (ER) — invokes MagicBlock VRF (DEFAULT_EPHEMERAL_QUEUE)
- *   7. callback_resolve_spin (ER VRF Oracle) — verifies real VRF callback updates BuyerAccount
- *   8. commit_and_undelegate_buyer (ER -> L1) — confirms settlement via GetCommitmentSignature (SDK 0.18.0)
- *   9. claim_or_sell_shards (L1) — transfers real cashback / shard buyback SOL on L1
+ * Proves the complete end-to-end on-chain lifecycle & security invariants on Solana Devnet + MagicBlock TEE:
+ *   1.  [L1] init_store — seeds StoreVault (store_v2) cashback & shard buyback reserve
+ *   2.  [L1] init_buyer — initializes BuyerAccount (buyer_v2) + pre-funds EphemeralPermission rent
+ *   3.  [L1 SECURITY] deposit_checkout(item=0, price=1) — MUST FAIL (fixed catalog price check)
+ *   4.  [L1] deposit_checkout(item=0, price=0.02 SOL) — escrows SOL & sets SpinState::Paid
+ *   5.  [L1] delegate_buyer — delegates BuyerAccount PDA to MagicBlock TEE Validator (MTEWGuqx...)
+ *   6.  [TEE AUTH] getAuthToken(devnet-tee.magicblock.app) — authenticates buyer via Ed25519 signature
+ *   7.  [TEE] enable_privacy — invokes Permission Program CreateEphemeralPermissionCpi (is_private=true)
+ *   8.  [TEE PRIVACY PROOF] Stranger unauthenticated read MUST return null/401 while Owner JWT read returns 136 bytes
+ *   9.  [TEE] request_spin — transitions Paid -> PendingVrf & invokes MagicBlock VRF (DEFAULT_EPHEMERAL_QUEUE)
+ *   10. [TEE] callback_resolve_spin — verifies real VRF callback resolves unbiased roll_bps & clears pending_amount=0
+ *   11. [TEE SECURITY] second request_spin on same payment — MUST FAIL (single-spin state machine)
+ *   12. [TEE -> L1] commit_and_undelegate_buyer — closes EphemeralPermission, refunds rent, confirms via GetCommitmentSignature
+ *   13. [L1] claim_or_sell_shards — claims won cashback + sells 10 Loyalty Shards for instant SOL
+ *   14. [L1 SECURITY + MERCHANT] withdraw_merchant_funds — rejects over-withdrawal (protects shard reserve), succeeds within safe revenue
  *
  * Run:
  *   PROGRAM_ID=BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX npm run probe
@@ -31,6 +36,7 @@ import {
   MAGIC_CONTEXT_ID,
   MAGIC_PROGRAM_ID,
   DELEGATION_PROGRAM_ID,
+  getAuthToken,
   delegateBufferPdaFromDelegatedAccountAndOwnerProgram,
   delegationRecordPdaFromDelegatedAccount,
   delegationMetadataPdaFromDelegatedAccount,
@@ -43,12 +49,14 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Verified MagicBlock & Solana Devnet Constants (Nov 2026)
+// Verified MagicBlock & Solana Devnet Constants
 const L1_RPC = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
-const ER_RPC = process.env.ER_RPC_URL ?? "https://devnet-us.magicblock.app";
+const ER_RPC = process.env.ER_RPC_URL ?? "https://devnet-tee.magicblock.app";
 const ER_VALIDATOR = new PublicKey(
-  process.env.ER_VALIDATOR ?? "MUS3hc9TCw4cGC12vHNoYcCGzJG1txjgQLZWVoeNHNd"
+  process.env.ER_VALIDATOR ?? "MTEWGuqxUpYZGFJQcp8tLN7x5v9BSeoFHYWQQ3n3xzo"
 );
+const PERMISSION_PROGRAM_ID = new PublicKey("ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1");
+const EPHEMERAL_VAULT_ID = new PublicKey("MagicVau1t999999999999999999999999999999999");
 const VRF_PROGRAM_ID = new PublicKey("Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz");
 const DEFAULT_EPHEMERAL_QUEUE = new PublicKey(
   process.env.VRF_QUEUE ?? "5hBR571xnXppuCPveTrctfTU7tJLSN94nq7kv7FRK5Tc"
@@ -60,6 +68,11 @@ const PROGRAM_ID = new PublicKey(
 );
 const KEYPAIR_PATH =
   process.env.PAYER_KEYPAIR_PATH ?? path.join(os.homedir(), ".config", "solana", "id.json");
+
+const STORE_SEED = "store_v2";
+const BUYER_SEED = "buyer_v2";
+const PERMISSION_SEED = "permission:";
+const BUYER_ACCOUNT_SIZE = 136;
 
 interface IdlAccount {
   name: string;
@@ -102,15 +115,22 @@ function u16LE(n: number): Buffer {
 
 function deriveStoreVault(authority: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("store"), authority.toBuffer()],
+    [Buffer.from(STORE_SEED), authority.toBuffer()],
     PROGRAM_ID
   );
 }
 
 function deriveBuyerAccount(storeVault: PublicKey, buyer: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("buyer"), storeVault.toBuffer(), buyer.toBuffer()],
+    [Buffer.from(BUYER_SEED), storeVault.toBuffer(), buyer.toBuffer()],
     PROGRAM_ID
+  );
+}
+
+function derivePermissionPda(buyerAccount: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(PERMISSION_SEED), buyerAccount.toBuffer()],
+    PERMISSION_PROGRAM_ID
   );
 }
 
@@ -118,12 +138,20 @@ function deriveProgramIdentityPda(): PublicKey {
   return PublicKey.findProgramAddressSync([Buffer.from("identity")], PROGRAM_ID)[0];
 }
 
+function signMessageWithKeypair(kp: Keypair): (msg: Uint8Array) => Promise<Uint8Array> {
+  // PKCS#8 DER prefix for a 32-byte Ed25519 private seed (native Node.js crypto, zero extra deps)
+  const pkcs8Prefix = Buffer.from("302e020100300506032b657004220420", "hex");
+  const privateKey = crypto.createPrivateKey({
+    key: Buffer.concat([pkcs8Prefix, Buffer.from(kp.secretKey.subarray(0, 32))]),
+    format: "der",
+    type: "pkcs8",
+  });
+  return async (msg: Uint8Array) => new Uint8Array(crypto.sign(null, Buffer.from(msg), privateKey));
+}
+
 function decodeBuyerAccount(data: Buffer) {
-  // Layout matches BuyerAccount in programs/pay-maybe/src/lib.rs
-  // 8 disc | 32 buyer | 32 store | 1 bump | 1 spin_state | 1 last_item_id |
-  // 8 pending_amount | 2 last_rebate_bps | 8 claimable_rebate_lamports |
-  // 8 shard_balance | 8 total_checkouts | 8 total_won_lamports | 1 is_private
-  const spinStates = ["Idle", "PendingVrf", "Resolved"] as const;
+  // Exact 136-byte v2 layout matching BuyerAccount in programs/pay-maybe/src/lib.rs
+  const spinStates = ["Idle", "Paid", "PendingVrf", "Resolved"] as const;
   return {
     buyer: new PublicKey(data.subarray(8, 40)),
     store: new PublicKey(data.subarray(40, 72)),
@@ -131,12 +159,20 @@ function decodeBuyerAccount(data: Buffer) {
     spinState: spinStates[data.readUInt8(73)] ?? `Unknown(${data.readUInt8(73)})`,
     lastItemId: data.readUInt8(74),
     pendingAmount: data.readBigUInt64LE(75),
-    lastRebateBps: data.readUInt16LE(83),
-    claimableRebateLamports: data.readBigUInt64LE(85),
-    shardBalance: data.readBigUInt64LE(93),
-    totalCheckouts: data.readBigUInt64LE(101),
-    totalWonLamports: data.readBigUInt64LE(109),
-    isPrivate: data.readUInt8(117) === 1,
+    unsettledEscrowLamports: data.readBigUInt64LE(83),
+    tierOddsBps: [
+      data.readUInt16LE(91),
+      data.readUInt16LE(93),
+      data.readUInt16LE(95),
+      data.readUInt16LE(97),
+    ] as [number, number, number, number],
+    lastRollBps: data.readUInt16LE(99),
+    lastRebateBps: data.readUInt16LE(101),
+    claimableRebateLamports: data.readBigUInt64LE(103),
+    shardBalance: data.readBigUInt64LE(111),
+    totalCheckouts: data.readBigUInt64LE(119),
+    totalWonLamports: data.readBigUInt64LE(127),
+    isPrivate: data.readUInt8(135) === 1,
   };
 }
 
@@ -186,7 +222,7 @@ async function sendTx(
 ): Promise<string> {
   const tx = new Transaction().add(ix);
   tx.feePayer = payer.publicKey;
-  const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("confirmed");
+  const { blockhash } = await conn.getLatestBlockhash("confirmed");
   tx.recentBlockhash = blockhash;
   const sig = await sendAndConfirmTransaction(conn, tx, [payer], {
     commitment: "confirmed",
@@ -196,12 +232,37 @@ async function sendTx(
   return sig;
 }
 
-async function main() {
-  console.log("╔══════════════════════════════════════════════════════╗");
-  console.log("║   PayMaybe — Live Milestone 0 Devnet + ER Probe      ║");
-  console.log("╚══════════════════════════════════════════════════════╝\n");
+async function expectTxFailure(
+  conn: Connection,
+  payer: Keypair,
+  ix: TransactionInstruction,
+  label: string,
+  skipPreflight = false
+): Promise<void> {
+  const tx = new Transaction().add(ix);
+  tx.feePayer = payer.publicKey;
+  const { blockhash } = await conn.getLatestBlockhash("confirmed");
+  tx.recentBlockhash = blockhash;
+  try {
+    const sig = await sendAndConfirmTransaction(conn, tx, [payer], {
+      commitment: "confirmed",
+      skipPreflight,
+    });
+    throw new Error(`SECURITY ASSERTION FAILED: '${label}' unexpectedly SUCCEEDED (${sig})!`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.startsWith("SECURITY ASSERTION FAILED:")) {
+      throw err;
+    }
+    console.log(`   🛡️  [REJECTED AS EXPECTED] ${label}: ${msg.slice(0, 140)}`);
+  }
+}
 
-  // Load compiled IDL
+async function main() {
+  console.log("╔════════════════════════════════════════════════════════════╗");
+  console.log("║  PayMaybe — Live Devnet + MagicBlock TEE/VRF & Audit Probe ║");
+  console.log("╚════════════════════════════════════════════════════════════╝\n");
+
   const idlCandidates = [
     path.join(__dirname, "idl", "pay_maybe.json"),
     path.join(__dirname, "..", "..", "target", "idl", "pay_maybe.json"),
@@ -216,7 +277,6 @@ async function main() {
     `   Instructions: ${idl.instructions.map((i) => `${i.name}(${i.accounts.map((a) => a.name).join(",")})`).join("\n                 ")}\n`
   );
 
-  // Load keypair
   if (!fs.existsSync(KEYPAIR_PATH)) {
     throw new Error(`Keypair not found at ${KEYPAIR_PATH}`);
   }
@@ -224,14 +284,12 @@ async function main() {
     Uint8Array.from(JSON.parse(fs.readFileSync(KEYPAIR_PATH, "utf8")))
   );
   const l1Conn = new Connection(L1_RPC, "confirmed");
-  const erConn = new Connection(ER_RPC, "confirmed");
 
   console.log(`🔑 Payer:      ${payer.publicKey.toBase58()}`);
   console.log(`📦 Program ID: ${PROGRAM_ID.toBase58()}`);
   console.log(`🌐 L1 RPC:     ${L1_RPC}`);
-  console.log(`⚡ ER RPC:     ${ER_RPC} (Validator: ${ER_VALIDATOR.toBase58()})\n`);
+  console.log(`🛡️  TEE RPC:    ${ER_RPC} (Validator: ${ER_VALIDATOR.toBase58()})\n`);
 
-  // Verify program is deployed on Devnet
   const progInfo = await l1Conn.getAccountInfo(PROGRAM_ID);
   if (!progInfo || !progInfo.executable) {
     throw new Error(`Program ${PROGRAM_ID.toBase58()} is NOT deployed/executable on Devnet!`);
@@ -243,6 +301,7 @@ async function main() {
 
   const [storeVault] = deriveStoreVault(payer.publicKey);
   const [buyerAccount] = deriveBuyerAccount(storeVault, payer.publicKey);
+  const [permissionPda] = derivePermissionPda(buyerAccount);
   const bufferBuyerAccount = delegateBufferPdaFromDelegatedAccountAndOwnerProgram(
     buyerAccount,
     PROGRAM_ID
@@ -251,8 +310,9 @@ async function main() {
   const delegationMetadataBuyerAccount = delegationMetadataPdaFromDelegatedAccount(buyerAccount);
   const programIdentity = deriveProgramIdentityPda();
 
-  console.log(`🏦 StoreVault PDA:   ${storeVault.toBase58()}`);
-  console.log(`👤 BuyerAccount PDA: ${buyerAccount.toBase58()}\n`);
+  console.log(`🏦 StoreVault PDA (v2):   ${storeVault.toBase58()}`);
+  console.log(`👤 BuyerAccount PDA (v2): ${buyerAccount.toBase58()}`);
+  console.log(`🔒 Permission PDA:        ${permissionPda.toBase58()}\n`);
 
   const accountMap: Record<string, PublicKey> = {
     authority: payer.publicKey,
@@ -260,6 +320,9 @@ async function main() {
     payer: payer.publicKey,
     store_vault: storeVault,
     buyer_account: buyerAccount,
+    permission: permissionPda,
+    permission_program: PERMISSION_PROGRAM_ID,
+    ephemeral_vault: EPHEMERAL_VAULT_ID,
     buffer_buyer_account: bufferBuyerAccount,
     delegation_record_buyer_account: delegationRecordBuyerAccount,
     delegation_metadata_buyer_account: delegationMetadataBuyerAccount,
@@ -276,14 +339,14 @@ async function main() {
 
   const txLinks: Record<string, string> = {};
 
-  // STEP 1: init_store on L1 (0.1 SOL seed, odds [7500, 1800, 600, 100])
-  console.log("1️⃣  [L1] init_store (0.10 SOL cashback & shard reserve)...");
+  // STEP 1: init_store on L1 (0.10 SOL seed, odds [7500, 1800, 600, 100])
+  console.log("1️⃣  [L1] init_store (0.10 SOL seed, odds=[7500, 1800, 600, 100])...");
   const existingStore = await l1Conn.getAccountInfo(storeVault);
   if (existingStore) {
-    console.log("   ℹ️  StoreVault already initialized on L1 — skipping.");
+    console.log("   ℹ️  StoreVault v2 already initialized on L1 — skipping.");
   } else {
     const args = Buffer.concat([
-      u64LE(100_000_000n), // 0.1 SOL
+      u64LE(100_000_000n), // 0.10 SOL
       u16LE(7500),
       u16LE(1800),
       u16LE(600),
@@ -294,55 +357,116 @@ async function main() {
     txLinks["init_store (L1)"] = explorerUrl(sig);
   }
 
-  // STEP 2: init_buyer on L1
-  console.log("\n2️⃣  [L1] init_buyer...");
+  // STEP 2: init_buyer + deposit_checkout + delegate_buyer on L1
+  console.log("\n2️⃣  [L1] init_buyer (creates BuyerAccount v2 + pre-funds EphemeralPermission rent)...");
   const existingBuyer = await l1Conn.getAccountInfo(buyerAccount);
   if (existingBuyer && existingBuyer.owner.equals(DELEGATION_PROGRAM_ID)) {
-    console.log("   ℹ️  BuyerAccount already delegated to ER — jumping to ER steps.");
+    console.log("   ℹ️  BuyerAccount already delegated to TEE — jumping to TEE steps.");
   } else {
     const initBuyerIx = buildInstructionFromIdl(idl, "init_buyer", Buffer.alloc(0), accountMap);
     const initSig = await sendTx(l1Conn, payer, initBuyerIx, "init_buyer");
     txLinks["init_buyer (L1)"] = explorerUrl(initSig);
 
-    // STEP 3: deposit_checkout on L1 (item 0 = Espresso Pass, 0.02 SOL)
-    console.log("\n3️⃣  [L1] deposit_checkout (item=0 Espresso Pass, 0.02 SOL)...");
+    // If a prior run left unclaimed rebate, claim it first
+    const postInit = await l1Conn.getAccountInfo(buyerAccount, "confirmed");
+    if (postInit && postInit.data.length >= BUYER_ACCOUNT_SIZE) {
+      const dec = decodeBuyerAccount(postInit.data);
+      if (dec.claimableRebateLamports > 0n) {
+        const preClaimIx = buildInstructionFromIdl(idl, "claim_or_sell_shards", u64LE(0n), accountMap);
+        await sendTx(l1Conn, payer, preClaimIx, "pre-claim pending rebate");
+      }
+    }
+
+    // STEP 3 (NEGATIVE SECURITY TEST #1): 1-lamport checkout MUST fail!
+    console.log("\n3️⃣  [L1 SECURITY] Attempting 1-lamport fake-price exploit (MUST FAIL)...");
+    const fakePriceArgs = Buffer.concat([Buffer.from([0]), u64LE(1n)]);
+    const fakePriceIx = buildInstructionFromIdl(idl, "deposit_checkout", fakePriceArgs, accountMap);
+    await expectTxFailure(l1Conn, payer, fakePriceIx, "1-lamport fake-price deposit_checkout");
+
+    // STEP 4: Real fixed-catalog deposit_checkout (item 0 = Espresso Pass, 0.02 SOL)
+    console.log("\n4️⃣  [L1] deposit_checkout (item=0 Espresso Pass, 0.02 SOL)...");
     const depositArgs = Buffer.concat([Buffer.from([0]), u64LE(20_000_000n)]);
     const depositIx = buildInstructionFromIdl(idl, "deposit_checkout", depositArgs, accountMap);
     const depSig = await sendTx(l1Conn, payer, depositIx, "deposit_checkout");
     txLinks["deposit_checkout (L1)"] = explorerUrl(depSig);
 
-    // STEP 4: delegate_buyer on L1 -> MagicBlock ER
-    console.log("\n4️⃣  [L1] delegate_buyer -> MagicBlock ER...");
+    // STEP 5: delegate_buyer on L1 -> MagicBlock TEE Validator
+    console.log("\n5️⃣  [L1] delegate_buyer -> MagicBlock TEE Validator...");
     const delegateIx = buildInstructionFromIdl(idl, "delegate_buyer", Buffer.alloc(0), accountMap, [
       { pubkey: ER_VALIDATOR, isSigner: false, isWritable: false },
     ]);
     const delSig = await sendTx(l1Conn, payer, delegateIx, "delegate_buyer");
     txLinks["delegate_buyer (L1)"] = explorerUrl(delSig);
 
-    console.log("   ⏳ Waiting 3s for ER validator to pick up delegation...");
+    console.log("   ⏳ Waiting 3s for MagicBlock TEE validator to pick up delegation...");
     await sleep(3000);
   }
 
-  // STEP 5: enable_privacy on ER
-  console.log("\n5️⃣  [ER] enable_privacy...");
-  const privIx = buildInstructionFromIdl(idl, "enable_privacy", Buffer.alloc(0), accountMap);
-  const privSig = await sendTx(erConn, payer, privIx, "enable_privacy (ER)", true);
-  txLinks["enable_privacy (ER)"] = explorerUrl(privSig, true);
+  // STEP 6: Authenticate with MagicBlock TEE via getAuthToken
+  console.log("\n6️⃣  [TEE AUTH] Acquiring Intel TDX Query Filtering auth token via getAuthToken...");
+  const { token } = await getAuthToken(ER_RPC, payer.publicKey, signMessageWithKeypair(payer));
+  const teeAuthConn = new Connection(`${ER_RPC}?token=${token}`, "confirmed");
+  const teeStrangerConn = new Connection(ER_RPC, "confirmed");
+  console.log(`   ✅ Authenticated with ${ER_RPC} (token prefix: ${token.slice(0, 16)}…)`);
 
-  // STEP 6: request_spin on ER -> MagicBlock VRF
-  console.log("\n6️⃣  [ER] request_spin (MagicBlock VRF on DEFAULT_EPHEMERAL_QUEUE)...");
+  // STEP 7: enable_privacy on TEE (invokes real Permission Program CreateEphemeralPermissionCpi!)
+  console.log("\n7️⃣  [TEE] enable_privacy (Permission Program CreateEphemeralPermissionCpi)...");
+  const privIx = buildInstructionFromIdl(idl, "enable_privacy", Buffer.alloc(0), accountMap);
+  const privSig = await sendTx(teeAuthConn, payer, privIx, "enable_privacy (TEE)", true);
+  txLinks["enable_privacy (TEE)"] = explorerUrl(privSig, true);
+
+  await sleep(1000);
+
+  // STEP 8: LIVE DUAL-READ TEE PRIVACY PROOF!
+  console.log("\n8️⃣  [TEE PRIVACY PROOF] Dual-read check (Stranger without token vs Owner with JWT)...");
+  const ownerTeeInfo = await teeAuthConn.getAccountInfo(buyerAccount, "confirmed");
+  if (!ownerTeeInfo || ownerTeeInfo.data.length < BUYER_ACCOUNT_SIZE) {
+    throw new Error("TEE PRIVACY PROOF FAILED: Authenticated owner could NOT read delegated BuyerAccount on TEE!");
+  }
+  const ownerDecoded = decodeBuyerAccount(ownerTeeInfo.data);
+  console.log(
+    `   ✅ Owner (JWT token) read: ${ownerTeeInfo.data.length} bytes (spinState=${ownerDecoded.spinState}, isPrivate=${ownerDecoded.isPrivate}, odds=${JSON.stringify(ownerDecoded.tierOddsBps)})`
+  );
+
+  let strangerBlocked = false;
+  try {
+    const strangerTeeInfo = await teeStrangerConn.getAccountInfo(buyerAccount, "confirmed");
+    if (strangerTeeInfo === null) {
+      strangerBlocked = true;
+      console.log(`   ✅ Stranger (no token) read: { "value": null } — BLOCKED BY MAGICBLOCK TEE!`);
+    } else {
+      throw new Error(
+        `TEE PRIVACY PROOF FAILED: Unauthenticated stranger read ${strangerTeeInfo.data.length} bytes!`
+      );
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.startsWith("TEE PRIVACY PROOF FAILED:")) throw err;
+    if (msg.includes("401") || msg.includes("403") || msg.toLowerCase().includes("unauthorized")) {
+      strangerBlocked = true;
+      console.log(`   ✅ Stranger (no token) read rejected (401/403): ${msg.slice(0, 100)}`);
+    } else {
+      throw err;
+    }
+  }
+  if (!strangerBlocked || !ownerDecoded.isPrivate) {
+    throw new Error("TEE PRIVACY PROOF FAILED: Privacy invariant did not hold!");
+  }
+
+  // STEP 9: request_spin on TEE -> MagicBlock VRF
+  console.log("\n9️⃣  [TEE] request_spin (Paid -> PendingVrf, MagicBlock VRF DEFAULT_EPHEMERAL_QUEUE)...");
   const clientSeed = crypto.randomBytes(32);
   const spinIx = buildInstructionFromIdl(idl, "request_spin", clientSeed, accountMap);
-  const spinSig = await sendTx(erConn, payer, spinIx, "request_spin (ER)", true);
-  txLinks["request_spin (ER)"] = explorerUrl(spinSig, true);
+  const spinSig = await sendTx(teeAuthConn, payer, spinIx, "request_spin (TEE)", true);
+  txLinks["request_spin (TEE)"] = explorerUrl(spinSig, true);
 
-  // STEP 7: Wait for real MagicBlock VRF callback_resolve_spin on ER
-  console.log("\n7️⃣  [ER] Waiting for live MagicBlock #[vrf_callback] callback_resolve_spin...");
+  // STEP 10: Wait for real MagicBlock VRF callback_resolve_spin on TEE
+  console.log("\n🔟 [TEE] Waiting for live MagicBlock #[vrf_callback] callback_resolve_spin...");
   let resolvedState: ReturnType<typeof decodeBuyerAccount> | null = null;
   for (let i = 0; i < 30; i++) {
     await sleep(1500);
-    const info = await erConn.getAccountInfo(buyerAccount, "confirmed");
-    if (info && info.data.length >= 118) {
+    const info = await teeAuthConn.getAccountInfo(buyerAccount, "confirmed");
+    if (info && info.data.length >= BUYER_ACCOUNT_SIZE) {
       const decoded = decodeBuyerAccount(info.data);
       if (decoded.spinState === "Resolved") {
         resolvedState = decoded;
@@ -352,47 +476,93 @@ async function main() {
     }
   }
   if (!resolvedState) {
-    throw new Error("Timed out waiting for MagicBlock VRF callback_resolve_spin on ER!");
+    throw new Error("Timed out waiting for MagicBlock VRF callback_resolve_spin on TEE!");
   }
-  console.log("   🎉 REAL VRF CALLBACK RESOLVED ON ER!");
-  console.log(`      Rebate: ${(resolvedState.lastRebateBps / 100).toFixed(0)}% (${resolvedState.claimableRebateLamports} lamports)`);
-  console.log(`      Shards: ${resolvedState.shardBalance} Loyalty Shards`);
-  console.log(`      Private flag: ${resolvedState.isPrivate}`);
+  if (resolvedState.pendingAmount !== 0n) {
+    throw new Error(
+      `SECURITY ASSERTION FAILED: pendingAmount was NOT cleared after VRF callback (${resolvedState.pendingAmount})!`
+    );
+  }
+  console.log("   🎉 REAL VRF CALLBACK RESOLVED INSIDE MAGICBLOCK TEE!");
+  console.log(`      Unbiased VRF Roll: ${resolvedState.lastRollBps}/9999 (${(resolvedState.lastRollBps / 100).toFixed(2)}%)`);
+  console.log(`      Rebate:            ${(resolvedState.lastRebateBps / 100).toFixed(0)}% (${resolvedState.claimableRebateLamports} lamports)`);
+  console.log(`      Shards:            ${resolvedState.shardBalance} Loyalty Shards`);
+  console.log(`      pendingAmount:     ${resolvedState.pendingAmount} (cleared!)`);
 
-  // STEP 8: commit_and_undelegate_buyer on ER -> confirm L1 settlement via SDK 0.18.0 GetCommitmentSignature
-  console.log("\n8️⃣  [ER -> L1] commit_and_undelegate_buyer...");
+  // STEP 11 (NEGATIVE SECURITY TEST #2): Re-spinning without paying again MUST FAIL!
+  console.log("\n1️⃣1️⃣ [TEE SECURITY] Attempting unlimited-spin exploit (2nd request_spin MUST FAIL)...");
+  const replaySpinIx = buildInstructionFromIdl(idl, "request_spin", crypto.randomBytes(32), accountMap);
+  await expectTxFailure(
+    teeAuthConn,
+    payer,
+    replaySpinIx,
+    "2nd request_spin without new payment (single-spin enforcement)",
+    true
+  );
+
+  // STEP 12: commit_and_undelegate_buyer on TEE -> confirm L1 settlement via SDK 0.18.0 GetCommitmentSignature
+  console.log("\n1️⃣2️⃣ [TEE -> L1] commit_and_undelegate_buyer (closes EphemeralPermission & undelegates)...");
   const commitIx = buildInstructionFromIdl(
     idl,
     "commit_and_undelegate_buyer",
     Buffer.alloc(0),
     accountMap
   );
-  const erCommitSig = await sendTx(erConn, payer, commitIx, "commit_and_undelegate_buyer (ER)", true);
-  txLinks["commit_and_undelegate (ER)"] = explorerUrl(erCommitSig, true);
+  const erCommitSig = await sendTx(teeAuthConn, payer, commitIx, "commit_and_undelegate_buyer (TEE)", true);
+  txLinks["commit_and_undelegate (TEE)"] = explorerUrl(erCommitSig, true);
 
-  console.log("   ⏳ Tracking L1 settlement via GetCommitmentSignature (SDK 0.18.0 v1/v2)...");
-  const l1CommitSig = await GetCommitmentSignature(erCommitSig, erConn);
+  console.log("   ⏳ Tracking L1 settlement via GetCommitmentSignature (SDK 0.18.0)...");
+  const l1CommitSig = await GetCommitmentSignature(erCommitSig, teeAuthConn);
   console.log(`   ✅ L1 Settlement Confirmed: ${l1CommitSig}`);
   txLinks["L1 settlement commit"] = explorerUrl(l1CommitSig);
 
-  // Wait briefly for L1 owner to switch back to PROGRAM_ID
   for (let i = 0; i < 15; i++) {
     const l1Buyer = await l1Conn.getAccountInfo(buyerAccount, "confirmed");
     if (l1Buyer && l1Buyer.owner.equals(PROGRAM_ID)) break;
     await sleep(1000);
   }
 
-  // STEP 9: claim_or_sell_shards on Solana L1 (claim rebate + sell 10 shards back for instant SOL)
-  console.log("\n9️⃣  [L1] claim_or_sell_shards (claim rebate + sell 10 shards for instant SOL)...");
+  // STEP 13: claim_or_sell_shards on Solana L1
+  console.log("\n1️⃣3️⃣ [L1] claim_or_sell_shards (claim rebate + sell 10 shards for instant SOL)...");
   const sellShards = resolvedState.shardBalance >= 10n ? 10n : 0n;
   const claimIx = buildInstructionFromIdl(idl, "claim_or_sell_shards", u64LE(sellShards), accountMap);
   const claimSig = await sendTx(l1Conn, payer, claimIx, "claim_or_sell_shards (L1)");
   txLinks["claim_or_sell_shards (L1)"] = explorerUrl(claimSig);
 
+  // STEP 14: Merchant withdraw security test (over-withdraw fails; safe withdraw succeeds!)
+  console.log("\n1️⃣4️⃣ [L1 MERCHANT] Testing withdraw_merchant_funds (reserve protection + real withdraw)...");
+  const overWithdrawIx = buildInstructionFromIdl(
+    idl,
+    "withdraw_merchant_funds",
+    u64LE(500_000_000n),
+    accountMap
+  );
+  await expectTxFailure(
+    l1Conn,
+    payer,
+    overWithdrawIx,
+    "withdraw_merchant_funds exceeding protected shard reserve"
+  );
+
+  const safeWithdrawIx = buildInstructionFromIdl(
+    idl,
+    "withdraw_merchant_funds",
+    u64LE(1_000_000n), // 0.001 SOL
+    accountMap
+  );
+  const withdrawSig = await sendTx(l1Conn, payer, safeWithdrawIx, "withdraw_merchant_funds (0.001 SOL)");
+  txLinks["withdraw_merchant_funds (L1)"] = explorerUrl(withdrawSig);
+
   const finalBalance = await l1Conn.getBalance(payer.publicKey);
-  console.log("\n══════════════════════════════════════════════════════");
-  console.log("✅ MILESTONE 0 PASSED — 100% REAL DEVNET + MAGICBLOCK VRF!");
-  console.log("══════════════════════════════════════════════════════");
+  console.log("\n════════════════════════════════════════════════════════════");
+  console.log("✅ MILESTONE 0 + SECURITY AUDIT PROBE PASSED 100% LIVE!");
+  console.log("   • Real MagicBlock TEE Permission Program (dual-read proven)");
+  console.log("   • Real MagicBlock VRF Callback (unbiased 64-bit roll)");
+  console.log("   • 1-lamport fake-price exploit REJECTED on-chain");
+  console.log("   • Double-spin replay exploit REJECTED on-chain");
+  console.log("   • Shard-reserve rug withdraw REJECTED on-chain");
+  console.log("   • Legitimate merchant revenue withdrawal SUCCEEDED on-chain");
+  console.log("════════════════════════════════════════════════════════════");
   console.log(`Store Authority: ${payer.publicKey.toBase58()}`);
   console.log(`StoreVault PDA:  ${storeVault.toBase58()}`);
   console.log(`Final Balance:   ${(finalBalance / LAMPORTS_PER_SOL).toFixed(4)} SOL\n`);

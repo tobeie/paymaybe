@@ -1,4 +1,4 @@
-name: PayMaybe CI (Anchor Program + Frontend)
+name: PayMaybe CI (Anchor Program + Frontend + Client)
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-frontend:
-    name: Verify Next.js Frontend Build
+    name: Verify Next.js Frontend Typecheck & Build
     runs-on: ubuntu-latest
 
     steps:
@@ -25,8 +25,33 @@ jobs:
         working-directory: frontend
         run: npm install --legacy-peer-deps
 
+      - name: Strict TypeScript Check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
       - name: Build Next.js Frontend
         working-directory: frontend
+        run: npm run build
+
+  build-client:
+    name: Verify Client Probe TypeScript Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Client Dependencies
+        working-directory: client
+        run: npm install --legacy-peer-deps
+
+      - name: Strict TypeScript Check
+        working-directory: client
         run: npm run build
 
   build-program:
@@ -45,6 +70,17 @@ jobs:
         with:
           toolchain: 1.89.0
 
+      - name: Cache Cargo Registry and Target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-anchor-1.0.2-${{ hashFiles('programs/**/Cargo.toml', 'Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-anchor-1.0.2-
+
       - name: Install Solana (Agave 3.1.9)
         run: |
           sh -c "$(curl -sSfL https://release.anza.xyz/v3.1.9/install)"
@@ -55,12 +91,10 @@ jobs:
           sudo curl -sSfL "https://github.com/solana-foundation/anchor/releases/download/v1.0.2/anchor-1.0.2-x86_64-unknown-linux-gnu" -o /usr/local/bin/anchor
           sudo chmod +x /usr/local/bin/anchor
 
-      - name: Configure Ephemeral Keypair and Program Keypair
+      - name: Configure Build Environment
         run: |
           solana-keygen new --no-bip39-passphrase --force
           solana config set --url devnet
-          mkdir -p target/deploy
-          cp programs/pay-maybe/pay_maybe-keypair.json target/deploy/pay_maybe-keypair.json
           rustc --version
           solana --version
           anchor --version

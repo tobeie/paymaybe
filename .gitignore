@@ -10,3 +10,4 @@ out/
 *.log
 test-ledger/
 .vercel
+*.tsbuildinfo

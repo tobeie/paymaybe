@@ -15,7 +15,7 @@ const WalletMultiButtonDynamic = dynamic(
 export default function Home() {
   const [showVault, setShowVault] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
-  const { state, checkout, claimRebate, sellShards, verifyPrivacy } = usePayMaybe();
+  const { state, checkout, cancelCheckout, claimRebate, sellShards, verifyPrivacy } = usePayMaybe();
 
   const showModal = selectedItemId !== null && state.phase !== "idle";
 
@@ -25,9 +25,8 @@ export default function Home() {
   };
 
   const handleCloseModal = () => {
-    if (state.phase === "done" || state.phase === "idle") {
-      setSelectedItemId(null);
-    }
+    cancelCheckout();
+    setSelectedItemId(null);
   };
 
   const selectedItem = selectedItemId !== null ? ITEMS[selectedItemId] : null;
@@ -39,7 +38,7 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <span className="text-xl font-bold text-pm-gold tracking-tight">PayMaybe</span>
             <span className="hidden sm:inline text-xs text-pm-muted border border-pm-border rounded px-2 py-0.5 font-mono">
-              Solana · MagicBlock ER
+              Solana · MagicBlock TEE
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -57,14 +56,14 @@ export default function Home() {
       <div className="max-w-5xl mx-auto px-6 pt-16 pb-8 text-center">
         <div className="inline-flex items-center gap-2 bg-pm-card border border-pm-border rounded-full px-4 py-1.5 text-xs text-pm-muted mb-6">
           <span className="w-1.5 h-1.5 bg-pm-success rounded-full animate-pulse" />
-          Live on Solana Devnet · MagicBlock Private ER
+          Live on Solana Devnet · MagicBlock Private TEE
         </div>
         <h1 className="text-4xl sm:text-5xl font-bold text-pm-text mb-4 tracking-tight">
           Buy Now, <span className="text-pm-gold">Pay Maybe</span>
         </h1>
         <p className="text-pm-muted text-lg max-w-xl mx-auto">
           Every checkout gives you an instant, provably fair chance to pay nothing —
-          privately inside a MagicBlock Ephemeral Rollup.
+          privately inside a MagicBlock Trusted Execution Environment.
         </p>
       </div>
 
@@ -88,6 +87,8 @@ export default function Home() {
           phase={state.phase}
           txSigs={state.txSigs}
           privacyProof={state.privacyProof}
+          privacyVerified={state.privacyVerified}
+          error={state.error}
           result={state.result}
           onVerifyPrivacy={() => {
             void verifyPrivacy();
@@ -102,7 +103,6 @@ export default function Home() {
         claimableLamports={state.claimableLamports}
         onClaim={claimRebate}
         onSellShards={sellShards}
-        onBurnForSpin={() => sellShards(10n)}
         lastCheckouts={state.lastCheckouts}
       />
     </div>
