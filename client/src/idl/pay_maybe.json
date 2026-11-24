@@ -27,10 +27,10 @@
         {
           "name": "vrf_program_identity",
           "docs": [
-            "Scoped VRF identity PDA, bound to this program. Its presence as a signer proves",
-            "the callback was issued by the VRF program for this program."
+            "Scoped VRF identity PDA, bound to this program (evaluated at compile time -> 0 runtime CU)."
           ],
-          "signer": true
+          "signer": true,
+          "address": "J5zck4juhYLVSGx7oyQ59t9RzM7vp2KLbNFWY7mFQLGp"
         },
         {
           "name": "buyer_account",
