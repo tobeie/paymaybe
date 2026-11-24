@@ -1,110 +1,118 @@
 "use client";
-import { useState } from "react";
-import dynamic from "next/dynamic";
-import { StorefrontSection } from "../components/StorefrontSection";
-import { SpinModal } from "../components/SpinModal";
-import { VaultDrawer } from "../components/VaultDrawer";
-import { usePayMaybe } from "../hooks/usePayMaybe";
-import { ITEMS } from "../lib/constants";
+import Link from "next/link";
+import { ITEMS, formatSolShort } from "../lib/constants";
+import { HeroReceipt } from "../components/HeroReceipt";
+import { ItemIcon } from "../components/ItemIcon";
 
-const WalletMultiButtonDynamic = dynamic(
-  async () => (await import("@solana/wallet-adapter-react-ui")).WalletMultiButton,
-  { ssr: false }
-);
-
-export default function Home() {
-  const [showVault, setShowVault] = useState(false);
-  const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
-  const { state, checkout, cancelCheckout, claimRebate, sellShards, verifyPrivacy } = usePayMaybe();
-
-  const showModal = selectedItemId !== null && state.phase !== "idle";
-
-  const handleBuy = async (itemId: number) => {
-    setSelectedItemId(itemId);
-    await checkout(itemId);
+export default function ShopPage() {
+  const scrollToShelf = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    const el = document.getElementById("shelf");
+    if (!el) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduced ? "auto" : "smooth" });
   };
-
-  const handleCloseModal = () => {
-    cancelCheckout();
-    setSelectedItemId(null);
-  };
-
-  const selectedItem = selectedItemId !== null ? ITEMS[selectedItemId] : null;
 
   return (
-    <div className="min-h-screen bg-pm-bg">
-      <header className="border-b border-pm-border bg-pm-surface/80 backdrop-blur-sm sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-xl font-bold text-pm-gold tracking-tight">PayMaybe</span>
-            <span className="hidden sm:inline text-xs text-pm-muted border border-pm-border rounded px-2 py-0.5 font-mono">
-              Solana · MagicBlock TEE
-            </span>
+    <section className="view" aria-labelledby="h-shop">
+      <div className="hero wrap">
+        <div className="hero-copy">
+          <h1 id="h-shop">
+            Buy now.
+            <br />
+            Pay maybe.
+          </h1>
+          <p className="lede">
+            Every checkout comes with one spin. You might get 25% back, half back, or the whole
+            thing free, and every spin earns shards you can cash in later.
+          </p>
+          <div className="hero-actions">
+            <a className="btn btn-key" href="#shelf" onClick={scrollToShelf}>
+              Pick something
+            </a>
+            <Link className="btn btn-line" href="/fair">
+              See the odds
+            </Link>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowVault(true)}
-              className="text-sm text-pm-muted hover:text-pm-text border border-pm-border rounded-lg px-3 py-1.5 transition-colors"
-            >
-              Vault 🏦
-            </button>
-            <WalletMultiButtonDynamic />
-          </div>
+          <dl className="hero-facts">
+            <div>
+              <dt>Free</dt>
+              <dd>1 in 100</dd>
+            </div>
+            <div>
+              <dt>Something back</dt>
+              <dd>1 in 4</dd>
+            </div>
+            <div>
+              <dt>Shards</dt>
+              <dd>every time</dd>
+            </div>
+          </dl>
         </div>
-      </header>
 
-      <div className="max-w-5xl mx-auto px-6 pt-16 pb-8 text-center">
-        <div className="inline-flex items-center gap-2 bg-pm-card border border-pm-border rounded-full px-4 py-1.5 text-xs text-pm-muted mb-6">
-          <span className="w-1.5 h-1.5 bg-pm-success rounded-full animate-pulse" />
-          Live on Solana Devnet · MagicBlock Private TEE
-        </div>
-        <h1 className="text-4xl sm:text-5xl font-bold text-pm-text mb-4 tracking-tight">
-          Buy Now, <span className="text-pm-gold">Pay Maybe</span>
-        </h1>
-        <p className="text-pm-muted text-lg max-w-xl mx-auto">
-          Every checkout gives you an instant, provably fair chance to pay nothing —
-          privately inside a MagicBlock Trusted Execution Environment.
-        </p>
+        <HeroReceipt />
       </div>
 
-      <main className="max-w-5xl mx-auto px-6 pb-24">
-        <StorefrontSection onBuy={handleBuy} />
+      <div className="shelf wrap" id="shelf">
+        <div className="section-head">
+          <h2>Today&apos;s shelf</h2>
+          <p>Prices are in devnet SOL. Each item includes one provably fair spin at checkout.</p>
+        </div>
+        <ul className="tags">
+          {ITEMS.map((item) => (
+            <li key={item.id}>
+              <article className="tag" aria-labelledby={`tag-${item.id}`}>
+                <ItemIcon icon={item.icon} />
+                <h3 id={`tag-${item.id}`}>{item.name}</h3>
+                <p>{item.description}</p>
+                <p className="tag-price">
+                  {formatSolShort(item.priceLamports)} <small>SOL</small>
+                </p>
+                <Link className="btn btn-key" href={`/checkout/${item.id}`}>
+                  Buy and spin
+                </Link>
+              </article>
+            </li>
+          ))}
+        </ul>
+      </div>
 
-        {state.error && (
-          <div className="mt-6 p-4 bg-pm-error/10 border border-pm-error/30 rounded-xl text-pm-error text-sm">
-            ⚠️ {state.error}
-          </div>
-        )}
-      </main>
-
-      {showModal && selectedItem && (
-        <SpinModal
-          isOpen={showModal}
-          onClose={handleCloseModal}
-          itemName={selectedItem.name}
-          itemEmoji={selectedItem.emoji}
-          priceDisplay={selectedItem.priceDisplay}
-          phase={state.phase}
-          txSigs={state.txSigs}
-          privacyProof={state.privacyProof}
-          privacyVerified={state.privacyVerified}
-          error={state.error}
-          result={state.result}
-          onVerifyPrivacy={() => {
-            void verifyPrivacy();
-          }}
-        />
-      )}
-
-      <VaultDrawer
-        isOpen={showVault}
-        onClose={() => setShowVault(false)}
-        shardBalance={state.shardBalance}
-        claimableLamports={state.claimableLamports}
-        onClaim={claimRebate}
-        onSellShards={sellShards}
-        lastCheckouts={state.lastCheckouts}
-      />
-    </div>
+      <div className="flow wrap">
+        <div className="section-head">
+          <h2>What happens when you pay</h2>
+          <p>Four steps, each one a live transaction you can verify on Solana.</p>
+        </div>
+        <ol className="flow-list">
+          <li>
+            <h3>Your payment is held</h3>
+            <p>
+              The fixed catalog price goes into the store&apos;s vault on Solana. Nothing is
+              refunded or kept until your spin settles.
+            </p>
+          </li>
+          <li>
+            <h3>Your spin goes private</h3>
+            <p>
+              Your checkout delegates into a MagicBlock Intel TDX rollup gated by the Permission
+              Program. While it&apos;s there, strangers read null.
+            </p>
+          </li>
+          <li>
+            <h3>A number is drawn</h3>
+            <p>
+              MagicBlock VRF draws an unbiased number from 0 to 9,999. Nobody can choose it, the
+              store included.
+            </p>
+          </li>
+          <li>
+            <h3>The result is settled</h3>
+            <p>
+              The result is committed back to Solana. Claim your cashback or sell shards back for
+              instant SOL whenever you like.
+            </p>
+          </li>
+        </ol>
+      </div>
+    </section>
   );
 }

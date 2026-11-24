@@ -167,9 +167,12 @@ paymaybe/
 ├── client/
 │   └── src/milestone0-probe.ts    # 14-step live Devnet + TEE Privacy + VRF + Security Audit probe
 ├── frontend/
-│   ├── src/app/page.tsx           # Storefront, Private TEE Spin Modal, Vault Drawer
-│   ├── src/hooks/usePayMaybe.ts   # Real Devnet L1 + MagicBlock TEE JWT + VRF transaction hook
-│   └── src/idl/pay_maybe.json     # Synced compiled Anchor 1.0.2 IDL
+│   ├── src/app/page.tsx                # Shop: felt counter, hero receipt & hanging price tags
+│   ├── src/app/checkout/[id]/page.tsx  # Live thermal receipt printer, odometer reel & TEE carbon copy
+│   ├── src/app/vault/page.tsx          # Cashback slip, shard chip stack & receipt stubs
+│   ├── src/app/fair/page.tsx           # Interactive 0–9,999 odds strip & live on-chain verification
+│   ├── src/hooks/usePayMaybe.ts        # Real Devnet L1 + MagicBlock TEE JWT + VRF transaction hook
+│   └── src/idl/pay_maybe.json          # Synced compiled Anchor 1.0.2 IDL
 └── .github/workflows/
     ├── build.yml                  # CI: Strict TS/Next.js + Client + Anchor 1.0.2 / Agave 3.1.9 build
     └── deploy-devnet.yml          # Secure Devnet upgrade + IDL sync + live Milestone 0 probe
@@ -182,8 +185,8 @@ paymaybe/
 ### Live Demo (Zero Setup)
 1. Open **[https://paymaybe-w298.vercel.app/](https://paymaybe-w298.vercel.app/)**.
 2. Switch **Phantom** to **Solana Devnet** (Settings → Developer Settings → Testnet Mode).
-3. Click **Buy Now** on any item (e.g., **Espresso Pass · 0.02 SOL**), approve the L1 checkout+delegation tx, sign the MagicBlock TEE auth challenge, and watch the live **Dual-Read TEE Privacy Proof** (`Stranger: null` vs `Owner JWT: 136 bytes`) + live MagicBlock VRF roll.
-4. Open **Vault** to **Claim SOL** or **Sell Shards → Instant SOL** anytime on L1.
+3. Pick any hanging price tag from the shelf (e.g., **Espresso Pass · 0.02 SOL**), click **Buy and spin**, approve the L1 escrow + delegation tx, sign the MagicBlock TEE auth challenge, and watch the live thermal receipt print each chain step, spin the `YOU PAY` odometer reel, and slam the rubber stamp.
+4. Click **Compare with a stranger's view** to inspect the live side-by-side carbon copy (`Your copy` via TEE JWT vs `A stranger's copy` returning `null`), open **Vault** (`/vault`) to claim cashback or sell shards anytime, and check **Fair play** (`/fair`) to see your rolls pinned on the `0–9,999` strip.
 
 ### Run Locally
 ```bash

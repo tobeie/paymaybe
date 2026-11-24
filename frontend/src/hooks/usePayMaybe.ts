@@ -32,7 +32,13 @@ import {
   DEFAULT_EPHEMERAL_QUEUE,
   SLOT_HASHES_SYSVAR,
   TEE_RPC,
+  SHARD_VALUE_LAMPORTS,
   ITEMS,
+  formatSol,
+  formatSolShort,
+  formatRoll,
+  shortKey,
+  explorerTxUrl,
 } from "../lib/constants";
 
 // Exact Anchor 1.0.2 discriminators (sha256("global:<ix_name>")[0..8])
@@ -58,37 +64,64 @@ export type SpinPhase =
   | "done";
 
 export interface SpinResult {
+  itemId: number;
+  receiptNo: string;
+  priceLamports: bigint;
   rebateBps: number;
   rebateLamports: bigint;
+  netLamports: bigint;
   shardsEarned: bigint;
   rollBps: number;
   txSignatures: Record<string, string>;
   privacyVerified: boolean;
+  settledAt: number;
 }
 
-export interface CheckoutRecord {
-  txSig: string;
-  status: string;
-  itemName: string;
+export interface ReceiptHistoryItem {
+  receiptNo: string;
+  itemId: number;
+  rollBps: number;
   rebateBps: number;
+  priceLamports: string;
+  rebateLamports: string;
+  shardsEarned: string;
+  escrowSig: string;
+  teeSig: string;
+  settleSig: string;
+  at: number;
 }
 
-export interface PrivacyCheckOutcome {
+export interface CarbonSnapshot {
+  pda: string;
+  yourCopy: string;
+  strangerCopy: string;
   verified: boolean;
-  proof: string;
+  note: string;
+  checkedAt: number;
+}
+
+export interface ToastItem {
+  id: number;
+  title: string;
+  lines: string[];
+  txUrl?: string;
+  txLabel?: string;
 }
 
 export interface PayMaybeState {
   phase: SpinPhase;
+  activeItemId: number | null;
   result: SpinResult | null;
   error: string | null;
   txSigs: Record<string, string>;
-  privacyProof: string | null;
-  privacyVerified: boolean;
+  carbon: CarbonSnapshot | null;
+  walletBalanceLamports: bigint;
   shardBalance: bigint;
   claimableLamports: bigint;
+  totalCheckoutsOnChain: number;
   isBuyerInitialized: boolean;
-  lastCheckouts: CheckoutRecord[];
+  history: ReceiptHistoryItem[];
+  toasts: ToastItem[];
 }
 
 function utf8Bytes(str: string): Uint8Array {
@@ -116,21 +149,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function deriveStoreVaultPda(): PublicKey {
+export function deriveStoreVaultPda(): PublicKey {
   return PublicKey.findProgramAddressSync(
     [utf8Bytes(STORE_SEED), STORE_AUTHORITY.toBytes()],
     PROGRAM_ID
   )[0];
 }
 
-function deriveBuyerAccountPda(storeVault: PublicKey, buyer: PublicKey): PublicKey {
+export function deriveBuyerAccountPda(storeVault: PublicKey, buyer: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [utf8Bytes(BUYER_SEED), storeVault.toBytes(), buyer.toBytes()],
     PROGRAM_ID
   )[0];
 }
 
-function derivePermissionPda(buyerAccount: PublicKey): PublicKey {
+export function derivePermissionPda(buyerAccount: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [utf8Bytes(PERMISSION_SEED), buyerAccount.toBytes()],
     PERMISSION_PROGRAM_ID
@@ -144,7 +177,6 @@ function deriveProgramIdentityPda(): PublicKey {
 type DecodedSpinState = "Idle" | "Paid" | "PendingVrf" | "Resolved";
 
 function decodeBuyerAccount(raw: Uint8Array) {
-  // Exact 136-byte v2 layout matching BuyerAccount in programs/pay-maybe/src/lib.rs
   const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
   const spinStateNum = view.getUint8(73);
   const spinStateMap: DecodedSpinState[] = ["Idle", "Paid", "PendingVrf", "Resolved"];
@@ -169,25 +201,68 @@ function decodeBuyerAccount(raw: Uint8Array) {
   };
 }
 
+function historyStorageKey(pubkey: string): string {
+  return `paymaybe-devnet-history-v2:${pubkey}`;
+}
+
+function loadHistory(pubkey: string): ReceiptHistoryItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(historyStorageKey(pubkey));
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as ReceiptHistoryItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(pubkey: string, items: ReceiptHistoryItem[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(historyStorageKey(pubkey), JSON.stringify(items.slice(0, 40)));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
 export function usePayMaybe() {
   const { connection } = useConnection();
   const wallet = useWallet();
 
-  // Cache TEE auth token per connected wallet pubkey so the buyer signs only once per session
   const teeTokenCache = useRef<{ pubkey: string; token: string; expiresAt: number } | null>(null);
+  const toastSeq = useRef(0);
+  const lastConnectedPubkey = useRef<string | null>(null);
 
   const [state, setState] = useState<PayMaybeState>({
     phase: "idle",
+    activeItemId: null,
     result: null,
     error: null,
     txSigs: {},
-    privacyProof: null,
-    privacyVerified: false,
+    carbon: null,
+    walletBalanceLamports: 0n,
     shardBalance: 0n,
     claimableLamports: 0n,
+    totalCheckoutsOnChain: 0,
     isBuyerInitialized: false,
-    lastCheckouts: [],
+    history: [],
+    toasts: [],
   });
+
+  const pushToast = useCallback(
+    (title: string, lines: string[], txUrl?: string, txLabel?: string) => {
+      const id = ++toastSeq.current;
+      setState((s) => ({
+        ...s,
+        toasts: [...s.toasts, { id, title, lines, txUrl, txLabel }],
+      }));
+      setTimeout(() => {
+        setState((s) => ({ ...s, toasts: s.toasts.filter((t) => t.id !== id) }));
+      }, 4200);
+    },
+    []
+  );
 
   const getTeeAuthToken = useCallback(async (): Promise<string> => {
     if (!wallet.publicKey || !wallet.signMessage) {
@@ -206,33 +281,75 @@ export function usePayMaybe() {
   }, [wallet.publicKey, wallet.signMessage]);
 
   const refreshAccount = useCallback(async () => {
-    if (!wallet.publicKey) return;
+    if (!wallet.publicKey) {
+      setState((s) => ({
+        ...s,
+        walletBalanceLamports: 0n,
+        shardBalance: 0n,
+        claimableLamports: 0n,
+        totalCheckoutsOnChain: 0,
+        isBuyerInitialized: false,
+        history: [],
+      }));
+      return;
+    }
+    const pubkeyStr = wallet.publicKey.toBase58();
+    const storedHistory = loadHistory(pubkeyStr);
+
     try {
       const storeVault = deriveStoreVaultPda();
       const buyerAccount = deriveBuyerAccountPda(storeVault, wallet.publicKey);
-      const info = await connection.getAccountInfo(buyerAccount, "confirmed");
+      const [bal, info] = await Promise.all([
+        connection.getBalance(wallet.publicKey, "confirmed"),
+        connection.getAccountInfo(buyerAccount, "confirmed"),
+      ]);
+
       if (info && info.data.length >= BUYER_ACCOUNT_SIZE) {
         const decoded = decodeBuyerAccount(info.data);
         setState((s) => ({
           ...s,
+          walletBalanceLamports: BigInt(bal),
           shardBalance: decoded.shardBalance,
           claimableLamports: decoded.claimableRebateLamports,
+          totalCheckoutsOnChain: Number(decoded.totalCheckouts),
           isBuyerInitialized: true,
+          history: storedHistory,
+        }));
+      } else {
+        setState((s) => ({
+          ...s,
+          walletBalanceLamports: BigInt(bal),
+          shardBalance: 0n,
+          claimableLamports: 0n,
+          totalCheckoutsOnChain: 0,
+          isBuyerInitialized: false,
+          history: storedHistory,
         }));
       }
+
+      if (lastConnectedPubkey.current !== pubkeyStr) {
+        lastConnectedPubkey.current = pubkeyStr;
+        pushToast("WALLET CONNECTED", [
+          shortKey(pubkeyStr),
+          `${formatSolShort(bal)} DEVNET SOL`,
+        ]);
+      }
     } catch {
-      // Non-fatal on initial load
+      setState((s) => ({ ...s, history: storedHistory }));
     }
-  }, [connection, wallet.publicKey]);
+  }, [connection, wallet.publicKey, pushToast]);
 
   useEffect(() => {
+    if (!wallet.publicKey) {
+      lastConnectedPubkey.current = null;
+    }
     void refreshAccount();
-  }, [refreshAccount]);
+  }, [wallet.publicKey, refreshAccount]);
 
   const signAndSend = useCallback(
     async (conn: Connection, tx: Transaction, skipPreflight = false): Promise<string> => {
       if (!wallet.publicKey || !wallet.signTransaction) {
-        throw new Error("Wallet does not support signing transactions");
+        throw new Error("Wallet does not support signing transactions.");
       }
       tx.feePayer = wallet.publicKey;
       const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("confirmed");
@@ -252,104 +369,147 @@ export function usePayMaybe() {
   );
 
   /**
-   * Honest dual-read MagicBlock TEE privacy verification:
-   *  1. Stranger read: GET devnet-tee.magicblock.app (NO auth token) -> must return null or 401/403.
-   *  2. Owner read:    GET devnet-tee.magicblock.app?token=<jwt>     -> must return live BuyerAccount bytes.
-   *
-   * ONLY marks verified=true when BOTH hold simultaneously. Never reports errors or undelegated
-   * accounts as verified.
+   * Honest dual-read MagicBlock TEE privacy comparison ("Your copy" vs "A stranger's copy"):
+   *  1. Owner read:    GET devnet-tee.magicblock.app?token=<jwt> -> decoded BuyerAccount
+   *  2. Stranger read: GET devnet-tee.magicblock.app             -> must return null or 401/403
+   * Never fabricates a "null" or "verified" result from a catch block or undelegated account.
    */
   const verifyPrivacy = useCallback(
-    async (buyerAccountPubkey?: PublicKey, existingToken?: string): Promise<PrivacyCheckOutcome> => {
+    async (buyerAccountPubkey?: PublicKey, existingToken?: string): Promise<CarbonSnapshot> => {
+      const storeVault = deriveStoreVaultPda();
+      const pda =
+        buyerAccountPubkey ??
+        (wallet.publicKey ? deriveBuyerAccountPda(storeVault, wallet.publicKey) : null);
+
+      if (!pda || !wallet.publicKey) {
+        const snap: CarbonSnapshot = {
+          pda: "",
+          yourCopy: "Wallet not connected.",
+          strangerCopy: "Connect a wallet first to read your buyer account PDA.",
+          verified: false,
+          note: "Connect your wallet to run a live dual read against devnet-tee.magicblock.app.",
+          checkedAt: Date.now(),
+        };
+        setState((s) => ({ ...s, carbon: snap }));
+        return snap;
+      }
+
+      const pdaStr = pda.toBase58();
       try {
-        const storeVault = deriveStoreVaultPda();
-        const pda =
-          buyerAccountPubkey ??
-          (wallet.publicKey ? deriveBuyerAccountPda(storeVault, wallet.publicKey) : null);
-
-        if (!pda) {
-          const proof = "Connect your Phantom wallet first to verify your BuyerAccount PDA on TEE.";
-          setState((s) => ({ ...s, privacyProof: proof, privacyVerified: false }));
-          return { verified: false, proof };
-        }
-
         const token = existingToken ?? (await getTeeAuthToken());
-
-        // 1. Authenticated owner read (proves account is genuinely live inside the TEE)
         const ownerConn = new Connection(`${TEE_RPC}?token=${token}`, "confirmed");
         const ownerInfo = await ownerConn.getAccountInfo(pda, "confirmed");
 
         if (!ownerInfo || ownerInfo.data.length < BUYER_ACCOUNT_SIZE) {
-          const proof = [
-            `TEE: ${TEE_RPC}`,
-            `PDA: ${pda.toBase58()}`,
-            `Owner read (?token=...): null`,
-            "",
-            "ℹ️ Account is not currently delegated to the MagicBlock TEE (settled on Solana L1).",
-            "Start a checkout to verify live Intel TDX access control during an active spin.",
-          ].join("\n");
-          setState((s) => ({ ...s, privacyProof: proof, privacyVerified: false }));
-          return { verified: false, proof };
+          const snap: CarbonSnapshot = {
+            pda: pdaStr,
+            yourCopy: `getAccountInfo(${shortKey(pdaStr)})\n→ null\n\nAccount is currently settled\non Solana L1, not in the TEE.`,
+            strangerCopy: `getAccountInfo(${shortKey(pdaStr)})\n→ (skipped)\n\nAccount is not delegated\nto the private rollup right now.`,
+            verified: false,
+            note: "Not currently delegated to the MagicBlock TEE. Start a spin to compare live reads while active.",
+            checkedAt: Date.now(),
+          };
+          setState((s) => ({ ...s, carbon: snap }));
+          return snap;
         }
 
         const decoded = decodeBuyerAccount(ownerInfo.data);
+        const item = ITEMS[decoded.lastItemId] ?? ITEMS[0];
+        const yourCopy = [
+          `getAccountInfo(${shortKey(pdaStr)})`,
+          `→ BuyerAccount (${ownerInfo.data.length} bytes) {`,
+          `  buyer: ${shortKey(wallet.publicKey.toBase58())}`,
+          `  item: ${item.name}`,
+          `  pending: ${formatSol(decoded.pendingAmount)} SOL`,
+          `  spin_state: ${decoded.spinState}`,
+          decoded.spinState === "Resolved" ? `  roll: ${formatRoll(decoded.lastRollBps)}` : null,
+          `  is_private: ${decoded.isPrivate}`,
+          `}`,
+        ]
+          .filter(Boolean)
+          .join("\n");
 
-        // 2. Unauthenticated stranger read against the SAME TEE endpoint (no token)
         let strangerBlocked = false;
-        let strangerSummary = "";
+        let strangerCopy = "";
         try {
           const strangerConn = new Connection(TEE_RPC, "confirmed");
           const strangerInfo = await strangerConn.getAccountInfo(pda, "confirmed");
           if (strangerInfo === null) {
             strangerBlocked = true;
-            strangerSummary = `{ "value": null }`;
+            strangerCopy = [
+              `getAccountInfo(${shortKey(pdaStr)})`,
+              `→ null`,
+              "",
+              "Permission Program hides this",
+              "account from unauthenticated",
+              "readers while the spin runs.",
+            ].join("\n");
           } else {
             strangerBlocked = false;
-            strangerSummary = `EXPOSED (${strangerInfo.data.length} bytes visible)`;
+            strangerCopy = [
+              `getAccountInfo(${shortKey(pdaStr)})`,
+              `→ EXPOSED (${strangerInfo.data.length} bytes)`,
+              "",
+              "Account is publicly readable",
+              "on this RPC right now.",
+            ].join("\n");
           }
         } catch (strangerErr: unknown) {
           const msg = strangerErr instanceof Error ? strangerErr.message : String(strangerErr);
           if (msg.includes("401") || msg.includes("403") || msg.toLowerCase().includes("unauthorized")) {
             strangerBlocked = true;
-            strangerSummary = `HTTP 401/403 Denied (${msg.slice(0, 80)})`;
+            strangerCopy = [
+              `getAccountInfo(${shortKey(pdaStr)})`,
+              `→ HTTP 401/403 Denied`,
+              "",
+              "Unauthenticated read rejected",
+              "by the MagicBlock TEE.",
+            ].join("\n");
           } else {
             throw strangerErr;
           }
         }
 
         const verified = strangerBlocked && decoded.isPrivate;
-        const proof = verified
-          ? [
-              `TEE: ${TEE_RPC}`,
-              `PDA: ${pda.toBase58()}`,
-              `1) Stranger (no token):   ${strangerSummary}`,
-              `2) Owner (TEE JWT token): ${ownerInfo.data.length} bytes (spinState=${decoded.spinState}, isPrivate=${decoded.isPrivate})`,
-              "",
-              "✅ TEE PRIVACY VERIFIED: Permission Program hides active session from strangers while owner reads live state.",
-            ].join("\n")
-          : [
-              `TEE: ${TEE_RPC}`,
-              `PDA: ${pda.toBase58()}`,
-              `1) Stranger (no token):   ${strangerSummary}`,
-              `2) Owner (TEE JWT token): ${ownerInfo.data.length} bytes (spinState=${decoded.spinState}, isPrivate=${decoded.isPrivate})`,
-              "",
-              "⚠️ PRIVACY NOT ACTIVE: Account is currently readable without authentication.",
-            ].join("\n");
-
-        setState((s) => ({ ...s, privacyProof: proof, privacyVerified: verified }));
-        return { verified, proof };
+        const snap: CarbonSnapshot = {
+          pda: pdaStr,
+          yourCopy,
+          strangerCopy,
+          verified,
+          note: verified
+            ? `Live dual read from ${TEE_RPC} — with your signed JWT vs without auth.`
+            : `Live dual read from ${TEE_RPC} — privacy is not currently enforced on this account.`,
+          checkedAt: Date.now(),
+        };
+        setState((s) => ({ ...s, carbon: snap }));
+        return snap;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        const proof = `TEE Privacy Check Failed\nEndpoint: ${TEE_RPC}\nError: ${message}`;
-        setState((s) => ({ ...s, privacyProof: proof, privacyVerified: false }));
-        return { verified: false, proof };
+        const snap: CarbonSnapshot = {
+          pda: pdaStr,
+          yourCopy: `Error reading TEE:\n${message}`,
+          strangerCopy: `Privacy check failed.\nErrors are never marked verified.`,
+          verified: false,
+          note: `Live read error: ${message}`,
+          checkedAt: Date.now(),
+        };
+        setState((s) => ({ ...s, carbon: snap }));
+        return snap;
       }
     },
     [wallet.publicKey, getTeeAuthToken]
   );
 
-  const cancelCheckout = useCallback(() => {
-    setState((s) => ({ ...s, phase: "idle" }));
+  const resetCheckoutState = useCallback(() => {
+    setState((s) => ({
+      ...s,
+      phase: "idle",
+      activeItemId: null,
+      result: null,
+      error: null,
+      txSigs: {},
+      carbon: null,
+    }));
   }, []);
 
   const checkout = useCallback(
@@ -357,7 +517,7 @@ export function usePayMaybe() {
       if (!wallet.publicKey || !wallet.signTransaction) {
         setState((s) => ({
           ...s,
-          error: "Please connect your Phantom wallet first",
+          error: "Connect your Phantom wallet first.",
           phase: "idle",
         }));
         return;
@@ -368,25 +528,25 @@ export function usePayMaybe() {
 
       const storeVault = deriveStoreVaultPda();
       const buyer = wallet.publicKey;
+      const buyerPubkeyStr = buyer.toBase58();
       const buyerAccount = deriveBuyerAccountPda(storeVault, buyer);
       const permissionPda = derivePermissionPda(buyerAccount);
 
       setState((s) => ({
         ...s,
         phase: "escrowing",
+        activeItemId: item.id,
         error: null,
         result: null,
         txSigs: {},
-        privacyProof: null,
-        privacyVerified: false,
+        carbon: null,
       }));
 
       try {
-        // Verify v2 StoreVault exists on Devnet before charging buyer
         const storeInfo = await connection.getAccountInfo(storeVault, "confirmed");
         if (!storeInfo) {
           throw new Error(
-            `StoreVault (${storeVault.toBase58().slice(0, 8)}…) is not initialized on Devnet yet. Run the Deploy & Milestone 0 workflow first.`
+            `StoreVault (${shortKey(storeVault.toBase58())}) is not initialized on Devnet yet.`
           );
         }
 
@@ -400,6 +560,8 @@ export function usePayMaybe() {
             : null;
 
         const prevShards = existingDecoded ? existingDecoded.shardBalance : 0n;
+        const receiptNum = existingDecoded ? Number(existingDecoded.totalCheckouts) + 1 : 1;
+        const receiptNo = String(receiptNum).padStart(4, "0");
         const txSigs: Record<string, string> = {};
 
         // TX 1 (Solana L1): init_buyer (if needed) + auto-claim prior rebate (if any) + deposit_checkout + delegate_buyer -> TEE_VALIDATOR
@@ -421,8 +583,6 @@ export function usePayMaybe() {
             );
           }
 
-          // If buyer won cashback on an earlier checkout and didn't manually claim yet,
-          // auto-claim it in this same L1 tx so deposit_checkout's escrow invariant passes cleanly.
           if (existingDecoded && existingDecoded.claimableRebateLamports > 0n) {
             l1Tx.add(
               new TransactionInstruction({
@@ -438,7 +598,6 @@ export function usePayMaybe() {
             );
           }
 
-          // Deposit fixed catalog price unless already in Paid state from an interrupted session
           if (!existingDecoded || existingDecoded.spinState !== "Paid") {
             l1Tx.add(
               new TransactionInstruction({
@@ -460,7 +619,6 @@ export function usePayMaybe() {
             );
           }
 
-          // Delegate BuyerAccount -> MagicBlock TEE Validator (MTEWGuqx...)
           const bufferPda = delegateBufferPdaFromDelegatedAccountAndOwnerProgram(
             buyerAccount,
             PROGRAM_ID
@@ -490,12 +648,10 @@ export function usePayMaybe() {
           const l1Sig = await signAndSend(connection, l1Tx, false);
           txSigs.escrowing = l1Sig;
           setState((s) => ({ ...s, phase: "delegating", txSigs: { ...txSigs } }));
-
-          // Wait briefly for TEE validator to sync delegated account
           await sleep(2500);
         }
 
-        // Authenticate with MagicBlock TEE (signed challenge -> JWT query token)
+        // Authenticate with MagicBlock TEE (signed challenge -> JWT)
         setState((s) => ({ ...s, phase: "privacy" }));
         const token = await getTeeAuthToken();
         const teeAuthConn = new Connection(`${TEE_RPC}?token=${token}`, "confirmed");
@@ -540,8 +696,8 @@ export function usePayMaybe() {
         txSigs.spinning = erSpinSig;
         setState((s) => ({ ...s, phase: "spinning", txSigs: { ...txSigs } }));
 
-        // Verify live TEE privacy AFTER enable_privacy has landed on-chain!
-        const privacyCheck = await verifyPrivacy(buyerAccount, token);
+        // Capture live dual-read TEE privacy proof while BuyerAccount is actively sealed on TEE
+        const carbonSnap = await verifyPrivacy(buyerAccount, token);
 
         // Poll authenticated TEE connection for real #[vrf_callback] callback_resolve_spin
         let resolved: ReturnType<typeof decodeBuyerAccount> | null = null;
@@ -561,8 +717,31 @@ export function usePayMaybe() {
           throw new Error("Timed out waiting for MagicBlock VRF oracle callback on TEE.");
         }
 
+        const shardsEarned =
+          resolved.shardBalance >= prevShards
+            ? resolved.shardBalance - prevShards
+            : resolved.shardBalance;
+        const rebateLamports = resolved.claimableRebateLamports;
+        const netLamports =
+          item.priceLamports >= rebateLamports ? item.priceLamports - rebateLamports : 0n;
+
+        // Reveal the real on-chain roll & begin landing odometer reel while committing back to L1
+        const interimResult: SpinResult = {
+          itemId: item.id,
+          receiptNo,
+          priceLamports: item.priceLamports,
+          rebateBps: resolved.lastRebateBps,
+          rebateLamports,
+          netLamports,
+          shardsEarned,
+          rollBps: resolved.lastRollBps,
+          txSignatures: { ...txSigs },
+          privacyVerified: carbonSnap.verified,
+          settledAt: Date.now(),
+        };
+        setState((s) => ({ ...s, phase: "revealing", result: interimResult }));
+
         // TX 3 (MagicBlock TEE -> Solana L1): close EphemeralPermission + commit_and_undelegate_buyer
-        setState((s) => ({ ...s, phase: "revealing" }));
         const erCommitTx = new Transaction().add(
           new TransactionInstruction({
             programId: PROGRAM_ID,
@@ -583,37 +762,44 @@ export function usePayMaybe() {
         const l1SettlementSig = await GetCommitmentSignature(erCommitSig, teeAuthConn);
         txSigs.revealing = l1SettlementSig;
 
-        const shardsEarned =
-          resolved.shardBalance >= prevShards
-            ? resolved.shardBalance - prevShards
-            : resolved.shardBalance;
-
-        const spinResult: SpinResult = {
-          rebateBps: resolved.lastRebateBps,
-          rebateLamports: resolved.claimableRebateLamports,
-          shardsEarned,
-          rollBps: resolved.lastRollBps,
+        const now = Date.now();
+        const finalResult: SpinResult = {
+          ...interimResult,
           txSignatures: { ...txSigs },
-          privacyVerified: privacyCheck.verified,
+          settledAt: now,
         };
+
+        const newRecord: ReceiptHistoryItem = {
+          receiptNo,
+          itemId: item.id,
+          rollBps: resolved.lastRollBps,
+          rebateBps: resolved.lastRebateBps,
+          priceLamports: item.priceLamports.toString(),
+          rebateLamports: rebateLamports.toString(),
+          shardsEarned: shardsEarned.toString(),
+          escrowSig: txSigs.escrowing ?? "",
+          teeSig: erSpinSig,
+          settleSig: l1SettlementSig,
+          at: now,
+        };
+
+        const nextHistory = [newRecord, ...loadHistory(buyerPubkeyStr)].slice(0, 40);
+        saveHistory(buyerPubkeyStr, nextHistory);
+
+        const updatedBal = await connection.getBalance(buyer, "confirmed").catch(() => null);
 
         setState((s) => ({
           ...s,
           phase: "done",
-          result: spinResult,
+          result: finalResult,
           txSigs: { ...txSigs },
+          walletBalanceLamports:
+            updatedBal !== null ? BigInt(updatedBal) : s.walletBalanceLamports,
           shardBalance: resolved.shardBalance,
           claimableLamports: resolved.claimableRebateLamports,
+          totalCheckoutsOnChain: Number(resolved.totalCheckouts),
           isBuyerInitialized: true,
-          lastCheckouts: [
-            {
-              txSig: l1SettlementSig,
-              status: "Settled on L1",
-              itemName: item.name,
-              rebateBps: resolved.lastRebateBps,
-            },
-            ...s.lastCheckouts.slice(0, 4),
-          ],
+          history: nextHistory,
         }));
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -626,7 +812,7 @@ export function usePayMaybe() {
   const settleOnL1 = useCallback(
     async (sellShardsAmount: bigint) => {
       if (!wallet.publicKey || !wallet.signTransaction) {
-        setState((s) => ({ ...s, error: "Connect Phantom wallet first" }));
+        setState((s) => ({ ...s, error: "Connect your wallet first." }));
         return;
       }
       try {
@@ -634,6 +820,8 @@ export function usePayMaybe() {
         const storeVault = deriveStoreVaultPda();
         const buyer = wallet.publicKey;
         const buyerAccount = deriveBuyerAccountPda(storeVault, buyer);
+
+        const prevClaimable = state.claimableLamports;
 
         const tx = new Transaction().add(
           new TransactionInstruction({
@@ -649,26 +837,36 @@ export function usePayMaybe() {
         );
 
         const sig = await signAndSend(connection, tx, false);
-        setState((s) => ({
-          ...s,
-          txSigs: { ...s.txSigs, claim: sig },
-          lastCheckouts: [
-            {
-              txSig: sig,
-              status: sellShardsAmount > 0n ? `Sold ${sellShardsAmount} Shards` : "Claimed SOL",
-              itemName: sellShardsAmount > 0n ? "Shard Buyback (L1)" : "Cashback Claim (L1)",
-              rebateBps: 0,
-            },
-            ...s.lastCheckouts.slice(0, 4),
-          ],
-        }));
+        setState((s) => ({ ...s, txSigs: { ...s.txSigs, claim: sig } }));
+
+        if (sellShardsAmount > 0n) {
+          const payoutLamports = sellShardsAmount * SHARD_VALUE_LAMPORTS;
+          pushToast(
+            "SHARDS SOLD",
+            [
+              `${sellShardsAmount.toString()} × 100 LAMPORTS`,
+              `+${formatSol(payoutLamports, 7)} SOL`,
+            ],
+            explorerTxUrl(sig),
+            `TX ${shortKey(sig)}`
+          );
+        } else {
+          pushToast(
+            "CASHBACK CLAIMED",
+            [`${formatSol(prevClaimable)} SOL`],
+            explorerTxUrl(sig),
+            `TX ${shortKey(sig)}`
+          );
+        }
+
         await refreshAccount();
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         setState((s) => ({ ...s, error: message }));
+        pushToast("TRANSACTION FAILED", [message.slice(0, 90)]);
       }
     },
-    [wallet, connection, signAndSend, refreshAccount]
+    [wallet, connection, signAndSend, refreshAccount, state.claimableLamports, pushToast]
   );
 
   const claimRebate = useCallback(async () => {
@@ -686,7 +884,7 @@ export function usePayMaybe() {
   return {
     state,
     checkout,
-    cancelCheckout,
+    resetCheckoutState,
     claimRebate,
     sellShards,
     verifyPrivacy,

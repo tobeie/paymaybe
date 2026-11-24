@@ -39,17 +39,121 @@ export const L1_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? "https://api.dev
 export const ER_RPC = "https://devnet-us.magicblock.app";
 export const TEE_RPC = "https://devnet-tee.magicblock.app";
 
+export const LAMPORTS_PER_SOL = 1_000_000_000;
 export const SHARD_VALUE_LAMPORTS = 100n;
 
+export type ItemIconKey = "cup" | "hoodie" | "ticket" | "box";
+
+export interface CatalogItem {
+  id: number;
+  name: string;
+  icon: ItemIconKey;
+  priceLamports: bigint;
+  priceDisplay: string;
+  description: string;
+}
+
 // Fixed catalog — must match ITEM_PRICES_LAMPORTS in programs/pay-maybe/src/lib.rs
-export const ITEMS = [
-  { id: 0, name: "Espresso Pass",    emoji: "☕", priceLamports: 20_000_000n,  priceDisplay: "0.02 SOL", description: "Single-origin digital espresso access" },
-  { id: 1, name: "Founder Hoodie",   emoji: "👟", priceLamports: 50_000_000n,  priceDisplay: "0.05 SOL", description: "Limited edition physical drop" },
-  { id: 2, name: "VIP Event Ticket", emoji: "🎟", priceLamports: 100_000_000n, priceDisplay: "0.10 SOL", description: "Front-row access, forever on-chain" },
-  { id: 3, name: "Mystery Box",      emoji: "🎁", priceLamports: 150_000_000n, priceDisplay: "0.15 SOL", description: "Surprise collectible — could be anything" },
+export const ITEMS: readonly CatalogItem[] = [
+  {
+    id: 0,
+    name: "Espresso Pass",
+    icon: "cup",
+    priceLamports: 20_000_000n,
+    priceDisplay: "0.02 SOL",
+    description: "A month of single-origin pours, redeemed at the counter.",
+  },
+  {
+    id: 1,
+    name: "Founder Hoodie",
+    icon: "hoodie",
+    priceLamports: 50_000_000n,
+    priceDisplay: "0.05 SOL",
+    description: "Limited physical drop. Ships to your door.",
+  },
+  {
+    id: 2,
+    name: "VIP Event Ticket",
+    icon: "ticket",
+    priceLamports: 100_000_000n,
+    priceDisplay: "0.10 SOL",
+    description: "Front-row seat, held in your wallet.",
+  },
+  {
+    id: 3,
+    name: "Mystery Box",
+    icon: "box",
+    priceLamports: 150_000_000n,
+    priceDisplay: "0.15 SOL",
+    description: "A sealed collectible. Could be anything.",
+  },
 ] as const;
 
-export const ODDS_DISPLAY = "1% FREE · 6% half-off · 18% quarter-off · Loyalty Shards always";
+export type TierKey = "free" | "half" | "quarter" | "none";
+
+export interface TierSpec {
+  key: TierKey;
+  lo: number;
+  hi: number;
+  bps: number;
+  shards: number;
+  stamp: string;
+  sub: string;
+  mini: string;
+}
+
+// Exact match to StoreVault.tier_odds_bps = [7500, 1800, 600, 100] in programs/pay-maybe/src/lib.rs
+export const TIERS: Record<TierKey, TierSpec> = {
+  free: { key: "free", lo: 9900, hi: 9999, bps: 10000, shards: 10, stamp: "Free", sub: "full refund", mini: "Free" },
+  half: { key: "half", lo: 9300, hi: 9899, bps: 5000, shards: 25, stamp: "50% off", sub: "cashback", mini: "50%" },
+  quarter: { key: "quarter", lo: 7500, hi: 9299, bps: 2500, shards: 50, stamp: "25% off", sub: "cashback", mini: "25%" },
+  none: { key: "none", lo: 0, hi: 7499, bps: 0, shards: 100, stamp: "+100 shards", sub: "thanks for shopping", mini: "+100" },
+};
+
+export function tierOfBps(rebateBps: number): TierSpec {
+  if (rebateBps >= 10000) return TIERS.free;
+  if (rebateBps >= 5000) return TIERS.half;
+  if (rebateBps >= 2500) return TIERS.quarter;
+  return TIERS.none;
+}
+
+export function tierOfRoll(rollBps: number): TierSpec {
+  if (rollBps >= 9900) return TIERS.free;
+  if (rollBps >= 9300) return TIERS.half;
+  if (rollBps >= 7500) return TIERS.quarter;
+  return TIERS.none;
+}
+
+export function formatSol(lamports: bigint | number, decimals = 4): string {
+  return (Number(lamports) / LAMPORTS_PER_SOL).toFixed(decimals);
+}
+
+export function formatSolShort(lamports: bigint | number): string {
+  const v = Number(lamports) / LAMPORTS_PER_SOL;
+  return (v >= 1 ? v.toFixed(2) : v.toFixed(3)).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+export function formatRoll(rollBps: number): string {
+  const s = String(Math.max(0, Math.min(9999, Math.trunc(rollBps)))).padStart(4, "0");
+  return `${s[0]},${s.slice(1)}`;
+}
+
+export function shortKey(s: string): string {
+  if (s.length <= 10) return s;
+  return `${s.slice(0, 4)}…${s.slice(-4)}`;
+}
+
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"] as const;
+
+export function formatReceiptDate(ts: number): string {
+  const d = new Date(ts);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = MONTHS[d.getMonth()];
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd} ${mm} ${yyyy}  ${hh}:${mi}`;
+}
 
 export function explorerTxUrl(sig: string): string {
   return `https://explorer.solana.com/tx/${sig}?cluster=devnet`;
