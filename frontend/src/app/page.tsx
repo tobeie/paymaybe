@@ -55,8 +55,8 @@ export default function ShopPage() {
 
       <div className="shelf wrap" id="shelf">
         <div className="section-head">
-          <h2>Today&apos;s shelf</h2>
-          <p>Prices are in devnet SOL. Each item includes one provably fair spin at checkout.</p>
+          <h2>The shelf</h2>
+          <p>A demo catalog priced in devnet SOL. Each item includes one provably fair spin. Nothing ships.</p>
         </div>
         <ul className="tags">
           {ITEMS.map((item) => (

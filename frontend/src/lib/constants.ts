@@ -57,35 +57,35 @@ export interface CatalogItem {
 export const ITEMS: readonly CatalogItem[] = [
   {
     id: 0,
-    name: "Espresso Pass",
+    name: "Ephemeral Espresso",
     icon: "cup",
     priceLamports: 20_000_000n,
     priceDisplay: "0.02 SOL",
-    description: "A month of single-origin pours, redeemed at the counter.",
+    description: "Single-origin, brewed fast. Gone before the block finishes.",
   },
   {
     id: 1,
-    name: "Founder Hoodie",
+    name: "Sub-100ms Hoodie",
     icon: "hoodie",
     priceLamports: 50_000_000n,
     priceDisplay: "0.05 SOL",
-    description: "Limited physical drop. Ships to your door.",
+    description: "A limited drop, quicker than you can blink.",
   },
   {
     id: 2,
-    name: "VIP Event Ticket",
+    name: "Hacker House Pass",
     icon: "ticket",
     priceLamports: 100_000_000n,
     priceDisplay: "0.10 SOL",
-    description: "Front-row seat, held in your wallet.",
+    description: "A seat at the build table, held in your wallet.",
   },
   {
     id: 3,
-    name: "Mystery Box",
+    name: "Mystery Rollup Box",
     icon: "box",
     priceLamports: 150_000_000n,
     priceDisplay: "0.15 SOL",
-    description: "A sealed collectible. Could be anything.",
+    description: "A sealed collectible. It opens when it settles.",
   },
 ] as const;
 

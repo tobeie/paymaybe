@@ -656,6 +656,28 @@ export function usePayMaybe() {
         const token = await getTeeAuthToken();
         const teeAuthConn = new Connection(`${TEE_RPC}?token=${token}`, "confirmed");
 
+        // Resume support: if BuyerAccount is already sealed on the TEE (tab closed mid-spin, or the
+        // oracle was slow last time), continue exactly where the on-chain state machine left off.
+        let resumeState: ReturnType<typeof decodeBuyerAccount> | null = null;
+        if (alreadyDelegated) {
+          const liveInfo = await teeAuthConn.getAccountInfo(buyerAccount, "confirmed");
+          if (liveInfo && liveInfo.data.length >= BUYER_ACCOUNT_SIZE) {
+            resumeState = decodeBuyerAccount(liveInfo.data);
+          }
+          if (!resumeState || resumeState.spinState === "Idle") {
+            throw new Error(
+              "Your account is sealed on the TEE but has no paid spin to resume. Try again in a few seconds."
+            );
+          }
+          const pendingItem = ITEMS[resumeState.lastItemId];
+          if (pendingItem && pendingItem.id !== item.id) {
+            throw new Error(
+              `You have an unfinished ${pendingItem.name} spin. Open that item and press Pay to finish it first.`
+            );
+          }
+          pushToast("RESUMING SPIN", [item.name.toUpperCase(), `STATE ${resumeState.spinState.toUpperCase()}`]);
+        }
+
         // TX 2 (MagicBlock TEE — 0 gas): enable_privacy (Permission Program CPI) + request_spin (VRF)
         const clientSeed = new Uint8Array(32);
         crypto.getRandomValues(clientSeed);
@@ -692,8 +714,13 @@ export function usePayMaybe() {
             })
           );
 
-        const erSpinSig = await signAndSend(teeAuthConn, erSpinTx, true);
-        txSigs.spinning = erSpinSig;
+        // Only send enable_privacy + request_spin when the account is freshly paid. A resumed
+        // PendingVrf / Resolved spin must NOT request a second spin (program rejects it anyway).
+        let erSpinSig = "";
+        if (!resumeState || resumeState.spinState === "Paid") {
+          erSpinSig = await signAndSend(teeAuthConn, erSpinTx, true);
+          txSigs.spinning = erSpinSig;
+        }
         setState((s) => ({ ...s, phase: "spinning", txSigs: { ...txSigs } }));
 
         // Capture live dual-read TEE privacy proof while BuyerAccount is actively sealed on TEE
@@ -701,7 +728,7 @@ export function usePayMaybe() {
 
         // Poll authenticated TEE connection for real #[vrf_callback] callback_resolve_spin
         let resolved: ReturnType<typeof decodeBuyerAccount> | null = null;
-        for (let i = 0; i < 30; i++) {
+        for (let i = 0; i < 60; i++) {
           await sleep(1000);
           const info = await teeAuthConn.getAccountInfo(buyerAccount, "confirmed");
           if (info && info.data.length >= BUYER_ACCOUNT_SIZE) {
@@ -714,7 +741,9 @@ export function usePayMaybe() {
         }
 
         if (!resolved) {
-          throw new Error("Timed out waiting for MagicBlock VRF oracle callback on TEE.");
+          throw new Error(
+            "Still waiting on the MagicBlock VRF oracle. Your payment is safe on-chain. Press Pay again to resume this spin."
+          );
         }
 
         const shardsEarned =
@@ -806,7 +835,7 @@ export function usePayMaybe() {
         setState((s) => ({ ...s, error: message, phase: "idle" }));
       }
     },
-    [wallet, connection, signAndSend, getTeeAuthToken, verifyPrivacy]
+    [wallet, connection, signAndSend, getTeeAuthToken, verifyPrivacy, pushToast]
   );
 
   const settleOnL1 = useCallback(

@@ -2,7 +2,7 @@
 
 <p align="center"><img src="docs/paymaybe-hero.gif" width="720" alt="PayMaybe checkout demo — the receipt is the slot machine"></p>
 
-**The receipt is the slot machine.** Every checkout comes with one provably fair spin. Get 25%, half, or the whole thing back — plus SOL-backed Loyalty Shards every time — and nobody else can see your spin while it runs.
+**The receipt is the slot machine.** Every checkout comes with one provably fair spin. Get 25%, half, or the whole thing back — plus a few Loyalty Shards every time (each sells back for 100 lamports) — and nobody else can see your spin while it runs.
 
 > **MagicBlock Solana Blitz v10 (Nov 20–27, 2026) · Theme: Entertainment Finance**
 
@@ -18,14 +18,14 @@
 
 1. Open **[https://paymaybe-w298.vercel.app/](https://paymaybe-w298.vercel.app/)**.
 2. Switch **Phantom** to **Solana Devnet** (Settings → Developer Settings → Testnet Mode) and grab free test SOL at [faucet.solana.com](https://faucet.solana.com) if needed.
-3. Pick any hanging price tag from the shelf (e.g., **Espresso Pass · 0.02 SOL**), click **Buy and spin**, approve the checkout transaction, sign the private session prompt, and watch the thermal receipt print each chain step, spin the `YOU PAY` odometer reel, and slam the rubber stamp.
+3. Pick any hanging price tag from the shelf (e.g., **Ephemeral Espresso · 0.02 SOL**), click **Buy and spin**, approve the checkout transaction, sign the private session prompt, and watch the thermal receipt print each chain step, spin the `YOU PAY` odometer reel, and slam the rubber stamp.
 4. Click **Compare with a stranger's view** to inspect the live side-by-side carbon copy (`Your copy` via TEE JWT vs `A stranger's copy` returning `null`), open **Vault** (`/vault`) to claim cashback or sell shards anytime, and open **Fair play** (`/fair`) to see your real rolls pinned on the `0–9,999` strip.
 
 ---
 
 ## 1. The Concept
 
-Directly inspired by MagicBlock CEO Andrea Fortugno's *"Buy Now, Pay Maybe"* Entertainment Finance thesis, **PayMaybe** is a drop-in gamified checkout storefront on Solana where every real purchase triggers a private, sub-second, provably fair rebate spin inside a **MagicBlock Private Ephemeral Rollup (TEE) + Permission Program + MagicBlock VRF**:
+Built for MagicBlock's **Entertainment Finance** theme, **PayMaybe** is a drop-in gamified checkout storefront on Solana where every real purchase triggers a private, sub-second, provably fair rebate spin inside a **MagicBlock Private Ephemeral Rollup (TEE) + Permission Program + MagicBlock VRF**:
 
 1. **Pay Once on Solana L1 (`init_buyer` + `deposit_checkout` + `delegate_buyer`):**  
    The buyer pays a fixed on-chain catalog price into an **undelegated** Solana L1 `StoreVault` PDA seeded with cashback & shard-buyback liquidity, pre-funds `BuyerAccount` with `EphemeralPermission` rent, and delegates only their `BuyerAccount` PDA to the **MagicBlock TEE Validator (`MTEWGuqxUpYZGFJQcp8tLN7x5v9BSeoFHYWQQ3n3xzo`)**.
@@ -210,7 +210,16 @@ PROGRAM_ID=BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX npm run probe
 
 ---
 
-## 8. Built With
+## 8. Known Limitations & Next Steps
+
+- **Stuck-spin refund:** the app resumes any half-finished spin (pending or resolved) on the next **Pay**. If the VRF oracle never answered at all, an on-chain `cancel_spin` refund would be needed. That requires a program upgrade and is not implemented yet.
+- **Cashback vs shard buyback funds:** cashback payouts only protect the vault's rent minimum. They do not segregate the shard buyback reserve.
+- **Shards are small by design:** 1 shard = 100 lamports, so a 100-shard spin sells back for 0.00001 SOL.
+- **Demo catalog:** the four shelf items are fixed on-chain prices for a devnet demo. Nothing ships.
+
+---
+
+## 9. Built With
 - **Solana (Agave 3.1.9)** & **Anchor 1.0.2**
 - **MagicBlock Private Ephemeral Rollups (Intel TDX TEE + Permission Program `ACLseoPoy...`)**
 - **MagicBlock SDK (`ephemeral-rollups-sdk` 0.18 / `@magicblock-labs/ephemeral-rollups-sdk@0.18.0`)**
