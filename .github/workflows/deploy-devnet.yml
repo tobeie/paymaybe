@@ -124,6 +124,44 @@ jobs:
         id: deploy
         run: |
           echo "Upgrading Program ID: $PROGRAM_ID"
+          SO_BYTES=$(stat -c%s target/deploy/pay_maybe.so)
+          MAX_SO_BYTES=$(node -e '
+            (async () => {
+              const rpc = "https://api.devnet.solana.com";
+              const post = (m, p) => fetch(rpc, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: m, params: p }) }).then(r => r.json());
+              const p = await post("getAccountInfo", [process.env.PROGRAM_ID, { encoding: "base64" }]);
+              if (!p.result?.value) { console.log(0); return; }
+              const pBuf = Buffer.from(p.result.value.data[0], "base64");
+              const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+              const toB58 = (bytes) => {
+                let digits = [0];
+                for (const b of bytes) {
+                  let carry = b;
+                  for (let j = 0; j < digits.length; ++j) { carry += digits[j] << 8; digits[j] = carry % 58; carry = (carry / 58) | 0; }
+                  while (carry > 0) { digits.push(carry % 58); carry = (carry / 58) | 0; }
+                }
+                let str = "";
+                for (let k = 0; bytes[k] === 0 && k < bytes.length - 1; ++k) str += "1";
+                for (let q = digits.length - 1; q >= 0; --q) str += B58[digits[q]];
+                return str;
+              };
+              const pdAddr = toB58(pBuf.subarray(4, 36));
+              const pd = await post("getAccountInfo", [pdAddr, { encoding: "base64", dataSlice: { offset: 0, length: 0 } }]);
+              const space = await fetch(rpc, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "getAccountInfo", params: [pdAddr, { encoding: "jsonParsed" }] }) }).then(r => r.json());
+              const full = await post("getAccountInfo", [pdAddr, { encoding: "base64" }]);
+              const len = full.result?.value ? Buffer.from(full.result.value.data[0], "base64").length : 0;
+              console.log(Math.max(0, len - 45));
+            })();
+          ')
+          echo "Compiled .so size: $SO_BYTES bytes | On-chain max .so capacity: $MAX_SO_BYTES bytes"
+          if [ "$MAX_SO_BYTES" -gt 0 ] && [ "$SO_BYTES" -gt "$MAX_SO_BYTES" ]; then
+            EXTRA=$(( SO_BYTES - MAX_SO_BYTES + 32768 ))
+            echo "Extending ProgramData by $EXTRA bytes (+32 KB headroom)..."
+            solana program extend "$PROGRAM_ID" "$EXTRA" \
+              --keypair ~/.config/solana/id.json \
+              --url devnet
+          fi
+
           solana program deploy target/deploy/pay_maybe.so \
             --program-id "$PROGRAM_ID" \
             --keypair ~/.config/solana/id.json \
