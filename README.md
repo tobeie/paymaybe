@@ -95,8 +95,9 @@ Evaluated directly against `StoreVault.tier_odds_bps` (`[7500, 1800, 600, 100]` 
 
 ### On-Chain Security Invariants (Hardened & Live-Tested)
 - **1 Payment = Strictly 1 Spin:** `SpinState` enforces `Idle -> Paid -> PendingVrf -> Resolved -> Idle`. `request_spin` requires `Paid` + `pending_amount > 0` and immediately flips to `PendingVrf`; `callback_resolve_spin` requires `PendingVrf` and immediately zeroes `pending_amount = 0`.
+- **Stuck-Spin Resume & `cancel_spin` Safety Valve:** Pressing **Pay** automatically resumes any interrupted spin (`PendingVrf` or `Resolved`). If the VRF oracle never answers, undelegating back to L1 and calling `cancel_spin` refunds the exact escrowed payment (`Paid` / `PendingVrf` only — a `Resolved` spin can never be cancelled after seeing a losing roll).
 - **Fixed Catalog Prices:** `deposit_checkout` enforces on-chain `ITEM_PRICES_LAMPORTS` (`[0.02, 0.05, 0.10, 0.15]` SOL) by `item_id` — eliminating 1-lamport shard farming — and replenishes `total_shard_reserve` (`+10,000` lamports) on every checkout.
-- **Solvency-Protected Merchant Withdrawals:** `withdraw_merchant_funds` allows `StoreVault.authority` to withdraw earned revenue while strictly preserving `rent_min + total_shard_reserve + active_escrow_lamports`.
+- **Segregated Cashback, Escrow & Shard Reserves:** `claim_or_sell_shards`, `cancel_spin`, and `withdraw_merchant_funds` all preserve `rent_min + total_shard_reserve + other_active_escrow_lamports`, so neither cashback payouts nor merchant withdrawals can ever dip into shard buyback funds or in-flight escrows.
 - **No Public Keypairs & Strict CI:** Zero keypair files tracked in git, `deploy-devnet.yml` hard-fails if `DEVNET_DEPLOYER_KEYPAIR` is missing, and strict `tsc --noEmit` + `next build` (no `ignoreBuildErrors`) runs on every push.
 
 ---
@@ -210,12 +211,11 @@ PROGRAM_ID=BxHVeQ7R5LuPLnoL6ySbiDstPChxJcEgPjoHCWgo2erX npm run probe
 
 ---
 
-## 8. Known Limitations & Next Steps
+## 8. Design Notes & Scope
 
-- **Stuck-spin refund:** the app resumes any half-finished spin (pending or resolved) on the next **Pay**. If the VRF oracle never answered at all, an on-chain `cancel_spin` refund would be needed. That requires a program upgrade and is not implemented yet.
-- **Cashback vs shard buyback funds:** cashback payouts only protect the vault's rent minimum. They do not segregate the shard buyback reserve.
-- **Shards are small by design:** 1 shard = 100 lamports, so a 100-shard spin sells back for 0.00001 SOL.
-- **Demo catalog:** the four shelf items are fixed on-chain prices for a devnet demo. Nothing ships.
+- **Daily rotating shelf (`Today's shelf`):** The four price tiers (`0.02`, `0.05`, `0.10`, `0.15` SOL) are enforced on-chain; each tier rotates deterministically through a 5-item pool at `00:00 UTC` so every visitor sees the same daily drop. Nothing physically ships.
+- **Shards are small by design:** `1 shard = 100 lamports` (`100 shards = 0.00001 SOL`), sized as lightweight devnet loyalty chips that are always 100% backed by `StoreVault.total_shard_reserve`.
+- **Stuck-spin recovery:** Half-finished spins resume automatically on **Pay**, or refund cleanly on Solana L1 via **Cancel this spin and refund** (`cancel_spin`).
 
 ---
 

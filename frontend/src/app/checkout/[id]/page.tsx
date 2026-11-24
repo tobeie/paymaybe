@@ -7,8 +7,8 @@ import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { usePayMaybeContext } from "../../../components/PayMaybeProvider";
 import { OdometerReel } from "../../../components/OdometerReel";
 import { ReceiptBarcode } from "../../../components/ReceiptBarcode";
+import { useShelf } from "../../../lib/shelf";
 import {
-  ITEMS,
   tierOfBps,
   formatSol,
   formatSolShort,
@@ -24,11 +24,13 @@ type StepVisual = "pending" | "active" | "done";
 export default function CheckoutPage() {
   const params = useParams<{ id: string }>();
   const itemId = Number(params?.id);
-  const item = Number.isInteger(itemId) && itemId >= 0 && itemId < ITEMS.length ? ITEMS[itemId] : null;
+  const { items: shelfItems } = useShelf();
+  const item =
+    Number.isInteger(itemId) && itemId >= 0 && itemId < shelfItems.length ? shelfItems[itemId] : null;
 
   const { publicKey, connected } = useWallet();
   const { setVisible } = useWalletModal();
-  const { state, checkout, resetCheckoutState, verifyPrivacy } = usePayMaybeContext();
+  const { state, checkout, resetCheckoutState, verifyPrivacy, cancelStuckSpin } = usePayMaybeContext();
 
   const [showCarbon, setShowCarbon] = useState(false);
   const [scrRoll, setScrRoll] = useState("----");
@@ -396,6 +398,18 @@ export default function CheckoutPage() {
               )}
 
               {state.error && <p className="pay-note err">Transaction error: {state.error}</p>}
+
+              {state.stuckSpin && (
+                <button
+                  type="button"
+                  className="btn btn-line btn-wide"
+                  style={{ marginTop: 12 }}
+                  disabled={state.cancelling}
+                  onClick={() => void cancelStuckSpin()}
+                >
+                  {state.cancelling ? "Cancelling…" : "Cancel this spin and refund"}
+                </button>
+              )}
             </div>
           )}
 

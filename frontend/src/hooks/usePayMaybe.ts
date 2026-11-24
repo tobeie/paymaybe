@@ -40,6 +40,7 @@ import {
   shortKey,
   explorerTxUrl,
 } from "../lib/constants";
+import { useShelf } from "../lib/shelf";
 
 // Exact Anchor 1.0.2 discriminators (sha256("global:<ix_name>")[0..8])
 const DISC = {
@@ -50,6 +51,7 @@ const DISC = {
   request_spin: new Uint8Array([186, 157, 114, 217, 55, 116, 223, 114]),
   commit_and_undelegate_buyer: new Uint8Array([65, 6, 85, 41, 85, 190, 235, 151]),
   claim_or_sell_shards: new Uint8Array([17, 85, 56, 128, 207, 170, 117, 197]),
+  cancel_spin: new Uint8Array([12, 123, 214, 19, 23, 69, 77, 88]),
 } as const;
 
 const BUYER_ACCOUNT_SIZE = 136;
@@ -80,6 +82,7 @@ export interface SpinResult {
 export interface ReceiptHistoryItem {
   receiptNo: string;
   itemId: number;
+  itemName?: string;
   rollBps: number;
   rebateBps: number;
   priceLamports: string;
@@ -122,6 +125,9 @@ export interface PayMaybeState {
   isBuyerInitialized: boolean;
   history: ReceiptHistoryItem[];
   toasts: ToastItem[];
+  /** True when the last spin timed out or a different unfinished spin blocks this one. */
+  stuckSpin: boolean;
+  cancelling: boolean;
 }
 
 function utf8Bytes(str: string): Uint8Array {
@@ -229,6 +235,7 @@ function saveHistory(pubkey: string, items: ReceiptHistoryItem[]) {
 export function usePayMaybe() {
   const { connection } = useConnection();
   const wallet = useWallet();
+  const { items: shelfItems } = useShelf();
 
   const teeTokenCache = useRef<{ pubkey: string; token: string; expiresAt: number } | null>(null);
   const toastSeq = useRef(0);
@@ -248,6 +255,8 @@ export function usePayMaybe() {
     isBuyerInitialized: false,
     history: [],
     toasts: [],
+    stuckSpin: false,
+    cancelling: false,
   });
 
   const pushToast = useCallback(
@@ -414,7 +423,7 @@ export function usePayMaybe() {
         }
 
         const decoded = decodeBuyerAccount(ownerInfo.data);
-        const item = ITEMS[decoded.lastItemId] ?? ITEMS[0];
+        const item = shelfItems[decoded.lastItemId] ?? shelfItems[0];
         const yourCopy = [
           `getAccountInfo(${shortKey(pdaStr)})`,
           `→ BuyerAccount (${ownerInfo.data.length} bytes) {`,
@@ -497,7 +506,7 @@ export function usePayMaybe() {
         return snap;
       }
     },
-    [wallet.publicKey, getTeeAuthToken]
+    [wallet.publicKey, getTeeAuthToken, shelfItems]
   );
 
   const resetCheckoutState = useCallback(() => {
@@ -523,7 +532,7 @@ export function usePayMaybe() {
         return;
       }
 
-      const item = ITEMS[itemId];
+      const item = shelfItems[itemId];
       if (!item) return;
 
       const storeVault = deriveStoreVaultPda();
@@ -537,6 +546,7 @@ export function usePayMaybe() {
         phase: "escrowing",
         activeItemId: item.id,
         error: null,
+        stuckSpin: false,
         result: null,
         txSigs: {},
         carbon: null,
@@ -671,8 +681,9 @@ export function usePayMaybe() {
           }
           const pendingItem = ITEMS[resumeState.lastItemId];
           if (pendingItem && pendingItem.id !== item.id) {
+            setState((s) => ({ ...s, stuckSpin: true }));
             throw new Error(
-              `You have an unfinished ${pendingItem.name} spin. Open that item and press Pay to finish it first.`
+              `You have an unfinished ${pendingItem.priceDisplay} spin. Open the ${pendingItem.priceDisplay} item and press Pay to finish it, or cancel it for a refund.`
             );
           }
           pushToast("RESUMING SPIN", [item.name.toUpperCase(), `STATE ${resumeState.spinState.toUpperCase()}`]);
@@ -741,8 +752,9 @@ export function usePayMaybe() {
         }
 
         if (!resolved) {
+          setState((s) => ({ ...s, stuckSpin: true }));
           throw new Error(
-            "Still waiting on the MagicBlock VRF oracle. Your payment is safe on-chain. Press Pay again to resume this spin."
+            "Still waiting on the MagicBlock VRF oracle. Your payment is safe on-chain. Press Pay again to resume this spin, or cancel it for a refund."
           );
         }
 
@@ -801,6 +813,7 @@ export function usePayMaybe() {
         const newRecord: ReceiptHistoryItem = {
           receiptNo,
           itemId: item.id,
+          itemName: item.name,
           rollBps: resolved.lastRollBps,
           rebateBps: resolved.lastRebateBps,
           priceLamports: item.priceLamports.toString(),
@@ -835,7 +848,7 @@ export function usePayMaybe() {
         setState((s) => ({ ...s, error: message, phase: "idle" }));
       }
     },
-    [wallet, connection, signAndSend, getTeeAuthToken, verifyPrivacy, pushToast]
+    [wallet, connection, signAndSend, getTeeAuthToken, verifyPrivacy, pushToast, shelfItems]
   );
 
   const settleOnL1 = useCallback(
@@ -910,9 +923,109 @@ export function usePayMaybe() {
     [settleOnL1]
   );
 
+  /**
+   * Safety valve for a stuck spin (oracle never answered / tab abandoned). If the account is still
+   * sealed on the TEE it is committed back to Solana first, then the on-chain `cancel_spin`
+   * instruction refunds the exact payment. A spin that already resolved cannot be cancelled.
+   */
+  const cancelStuckSpin = useCallback(async () => {
+    if (!wallet.publicKey || !wallet.signTransaction) {
+      setState((s) => ({ ...s, error: "Connect your wallet first." }));
+      return;
+    }
+    const buyer = wallet.publicKey;
+    const storeVault = deriveStoreVaultPda();
+    const buyerAccount = deriveBuyerAccountPda(storeVault, buyer);
+    const permissionPda = derivePermissionPda(buyerAccount);
+
+    setState((s) => ({ ...s, cancelling: true, error: null }));
+    try {
+      const info = await connection.getAccountInfo(buyerAccount, "confirmed");
+      if (!info) throw new Error("No spin found to cancel.");
+
+      if (info.owner.equals(DELEGATION_PROGRAM_ID)) {
+        const token = await getTeeAuthToken();
+        const teeConn = new Connection(`${TEE_RPC}?token=${token}`, "confirmed");
+        const live = await teeConn.getAccountInfo(buyerAccount, "confirmed");
+        if (!live || live.data.length < BUYER_ACCOUNT_SIZE) {
+          throw new Error("Could not read your sealed spin from the TEE. Try again in a few seconds.");
+        }
+        const liveState = decodeBuyerAccount(live.data);
+        if (liveState.spinState === "Resolved") {
+          throw new Error(
+            "This spin already resolved, so it can't be cancelled. Press Pay on the same item to settle it."
+          );
+        }
+
+        const commitTx = new Transaction().add(
+          new TransactionInstruction({
+            programId: PROGRAM_ID,
+            keys: [
+              { pubkey: buyer, isSigner: true, isWritable: true },
+              { pubkey: buyerAccount, isSigner: false, isWritable: true },
+              { pubkey: permissionPda, isSigner: false, isWritable: true },
+              { pubkey: PERMISSION_PROGRAM_ID, isSigner: false, isWritable: false },
+              { pubkey: EPHEMERAL_VAULT_ID, isSigner: false, isWritable: true },
+              { pubkey: MAGIC_PROGRAM_ID, isSigner: false, isWritable: false },
+              { pubkey: MAGIC_CONTEXT_ID, isSigner: false, isWritable: true },
+            ],
+            data: Buffer.from(DISC.commit_and_undelegate_buyer),
+          })
+        );
+        const commitSig = await signAndSend(teeConn, commitTx, true);
+        await GetCommitmentSignature(commitSig, teeConn);
+
+        for (let i = 0; i < 30; i++) {
+          const l1 = await connection.getAccountInfo(buyerAccount, "confirmed");
+          if (l1 && l1.owner.equals(PROGRAM_ID)) break;
+          await sleep(1000);
+        }
+      }
+
+      const l1Info = await connection.getAccountInfo(buyerAccount, "confirmed");
+      if (!l1Info || !l1Info.owner.equals(PROGRAM_ID) || l1Info.data.length < BUYER_ACCOUNT_SIZE) {
+        throw new Error("Your spin hasn't settled back to Solana yet. Press Cancel again in a few seconds.");
+      }
+      const l1State = decodeBuyerAccount(l1Info.data);
+      if (l1State.spinState !== "Paid" && l1State.spinState !== "PendingVrf") {
+        throw new Error(
+          "Nothing to cancel. The oracle answered just in time, so your result is waiting in the vault."
+        );
+      }
+
+      const cancelTx = new Transaction().add(
+        new TransactionInstruction({
+          programId: PROGRAM_ID,
+          keys: [
+            { pubkey: buyerAccount, isSigner: false, isWritable: true },
+            { pubkey: storeVault, isSigner: false, isWritable: true },
+            { pubkey: buyer, isSigner: true, isWritable: true },
+            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+          ],
+          data: Buffer.from(DISC.cancel_spin),
+        })
+      );
+      const cancelSig = await signAndSend(connection, cancelTx, false);
+      pushToast(
+        "SPIN CANCELLED",
+        [`${formatSol(l1State.pendingAmount)} SOL REFUNDED`],
+        explorerTxUrl(cancelSig),
+        `TX ${shortKey(cancelSig)}`
+      );
+      setState((s) => ({ ...s, stuckSpin: false, phase: "idle", activeItemId: null, error: null }));
+      await refreshAccount();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setState((s) => ({ ...s, error: message }));
+    } finally {
+      setState((s) => ({ ...s, cancelling: false }));
+    }
+  }, [wallet, connection, signAndSend, getTeeAuthToken, refreshAccount, pushToast]);
+
   return {
     state,
     checkout,
+    cancelStuckSpin,
     resetCheckoutState,
     claimRebate,
     sellShards,

@@ -491,12 +491,21 @@ pub mod pay_maybe {
             let rent_min = Rent::get()?.minimum_balance(StoreVault::SIZE);
             let store_info = store.to_account_info();
             let buyer_info = ctx.accounts.buyer.to_account_info();
+            // Cashback must never eat the shard buyback reserve or other buyers' in-flight escrow.
+            // (total_shard_reserve was already reduced above by any shards sold in this call.)
+            let other_escrow = store
+                .active_escrow_lamports
+                .saturating_sub(buyer_account.unsettled_escrow_lamports);
+            let protected_after = rent_min
+                .saturating_add(store.total_shard_reserve)
+                .saturating_add(other_escrow);
             require!(
-                store_info.lamports().saturating_sub(rent_min) >= total_payout,
+                store_info.lamports().saturating_sub(total_payout) >= protected_after,
                 PayMaybeError::InsufficientPoolReserve
             );
             **store_info.try_borrow_mut_lamports()? -= total_payout;
             **buyer_info.try_borrow_mut_lamports()? += total_payout;
+            store.total_pool_lamports = store.total_pool_lamports.saturating_sub(total_payout);
             store.total_paid_out_lamports =
                 store.total_paid_out_lamports.saturating_add(total_payout);
         }
@@ -539,6 +548,7 @@ pub mod pay_maybe {
 
         **store_info.try_borrow_mut_lamports()? -= amount;
         **authority_info.try_borrow_mut_lamports()? += amount;
+        store.total_pool_lamports = store.total_pool_lamports.saturating_sub(amount);
 
         let remaining_lamports = store_info.lamports();
         emit!(MerchantWithdrawn {
@@ -551,6 +561,62 @@ pub mod pay_maybe {
             amount,
             remaining_lamports
         );
+        Ok(())
+    }
+
+    /// Instruction 8 (Solana L1): Safety valve. If a checkout was paid but the spin never resolved
+    /// (oracle never answered, or buyer abandoned it), the buyer can undelegate the account and
+    /// get the exact payment back. Only valid while the account is back on L1 and the spin is
+    /// still `Paid` or `PendingVrf`. A resolved spin can never be cancelled, so a buyer cannot
+    /// refund after seeing a losing roll.
+    pub fn cancel_spin(ctx: Context<CancelSpin>) -> Result<()> {
+        let buyer_account = &mut ctx.accounts.buyer_account;
+        let store = &mut ctx.accounts.store_vault;
+
+        require!(
+            buyer_account.spin_state == SpinState::Paid
+                || buyer_account.spin_state == SpinState::PendingVrf,
+            PayMaybeError::NothingToCancel
+        );
+        let refund = buyer_account.pending_amount;
+        require!(refund > 0, PayMaybeError::NothingToCancel);
+
+        let rent_min = Rent::get()?.minimum_balance(StoreVault::SIZE);
+        let other_escrow = store
+            .active_escrow_lamports
+            .saturating_sub(buyer_account.unsettled_escrow_lamports);
+        let other_shard_reserve = store
+            .total_shard_reserve
+            .saturating_sub(MAX_SHARD_PAYOUT_PER_SPIN);
+        let protected_after = rent_min
+            .saturating_add(other_shard_reserve)
+            .saturating_add(other_escrow);
+        let store_info = store.to_account_info();
+        let buyer_info = ctx.accounts.buyer.to_account_info();
+        require!(
+            store_info.lamports().saturating_sub(refund) >= protected_after,
+            PayMaybeError::InsufficientPoolReserve
+        );
+        **store_info.try_borrow_mut_lamports()? -= refund;
+        **buyer_info.try_borrow_mut_lamports()? += refund;
+
+        store.active_escrow_lamports = store
+            .active_escrow_lamports
+            .saturating_sub(buyer_account.unsettled_escrow_lamports);
+        store.total_pool_lamports = store.total_pool_lamports.saturating_sub(refund);
+        store.total_shard_reserve = store
+            .total_shard_reserve
+            .saturating_sub(MAX_SHARD_PAYOUT_PER_SPIN);
+
+        buyer_account.unsettled_escrow_lamports = 0;
+        buyer_account.pending_amount = 0;
+        buyer_account.spin_state = SpinState::Idle;
+
+        emit!(SpinCancelled {
+            buyer: ctx.accounts.buyer.key(),
+            refund_lamports: refund,
+        });
+        msg!("Spin cancelled, refunded {} lamports", refund);
         Ok(())
     }
 }
@@ -784,6 +850,25 @@ pub struct WithdrawMerchantFunds<'info> {
     pub authority: Signer<'info>,
 }
 
+#[derive(Accounts)]
+pub struct CancelSpin<'info> {
+    #[account(
+        mut,
+        seeds = [BUYER_SEED, store_vault.key().as_ref(), buyer.key().as_ref()],
+        bump = buyer_account.bump
+    )]
+    pub buyer_account: Account<'info, BuyerAccount>,
+    #[account(
+        mut,
+        seeds = [STORE_SEED, store_vault.authority.as_ref()],
+        bump = store_vault.bump
+    )]
+    pub store_vault: Account<'info, StoreVault>,
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
 // =================== EVENTS ===================
 
 #[event]
@@ -816,6 +901,12 @@ pub struct MerchantWithdrawn {
     pub remaining_lamports: u64,
 }
 
+#[event]
+pub struct SpinCancelled {
+    pub buyer: Pubkey,
+    pub refund_lamports: u64,
+}
+
 // =================== ERRORS ===================
 
 #[error_code]
@@ -844,4 +935,6 @@ pub enum PayMaybeError {
     InsufficientWithdrawableFunds,
     #[msg("Unauthorized")]
     Unauthorized,
+    #[msg("Nothing to cancel: no paid, unresolved spin on this account")]
+    NothingToCancel,
 }

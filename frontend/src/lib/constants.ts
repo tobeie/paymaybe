@@ -42,7 +42,16 @@ export const TEE_RPC = "https://devnet-tee.magicblock.app";
 export const LAMPORTS_PER_SOL = 1_000_000_000;
 export const SHARD_VALUE_LAMPORTS = 100n;
 
-export type ItemIconKey = "cup" | "hoodie" | "ticket" | "box";
+export type ItemIconKey =
+  | "cup"
+  | "hoodie"
+  | "ticket"
+  | "box"
+  | "bolt"
+  | "cap"
+  | "chip"
+  | "gamepad"
+  | "rocket";
 
 export interface CatalogItem {
   id: number;
@@ -88,6 +97,56 @@ export const ITEMS: readonly CatalogItem[] = [
     description: "A sealed collectible. It opens when it settles.",
   },
 ] as const;
+
+/**
+ * Daily rotating shelf. The four PRICE TIERS (item ids 0-3) are fixed on-chain in
+ * ITEM_PRICES_LAMPORTS, so the items rotate per tier: each UTC day shows the next entry of each
+ * pool. The shelf is a pure function of the UTC date, so every visitor sees the same drop.
+ * Entry [0] of each pool MUST equal the matching entry in ITEMS above (the SSR/default shelf).
+ * Pure tribute to the MagicBlock stack and culture. No real people, no claims of affiliation.
+ */
+export const SHELF_EPOCH_DAY = Math.floor(Date.UTC(2026, 10, 24) / 86_400_000);
+
+export interface ShelfEntry {
+  name: string;
+  icon: ItemIconKey;
+  description: string;
+}
+
+export const SHELF_POOL: Readonly<Record<number, readonly ShelfEntry[]>> = {
+  // Tier 0 · 0.02 SOL
+  0: [
+    { name: "Ephemeral Espresso", icon: "cup", description: "Single-origin, brewed fast. Gone before the block finishes." },
+    { name: "Slot-Time Latte", icon: "cup", description: "One pour per slot. Foam optional, finality not." },
+    { name: "Gasless Chai", icon: "cup", description: "Spiced, warm, and zero fees at the counter." },
+    { name: "Lightning Sticker Pack", icon: "bolt", description: "Six stickers for the laptop you deploy from." },
+    { name: "Cold Brew Commit", icon: "cup", description: "Steeped overnight, committed at dawn." },
+  ],
+  // Tier 1 · 0.05 SOL
+  1: [
+    { name: "Sub-100ms Hoodie", icon: "hoodie", description: "A limited drop, quicker than you can blink." },
+    { name: "Undelegate Cap", icon: "cap", description: "Take it off whenever you like. Back on Solana in a flash." },
+    { name: "Ephemeral Tee", icon: "hoodie", description: "Soft, light, and gone from the shelf by tomorrow." },
+    { name: "Zero-Gas Beanie", icon: "cap", description: "Keeps your head warm and your fees at nothing." },
+    { name: "Validator Varsity Jacket", icon: "hoodie", description: "Stitched for the people who keep the chain honest." },
+  ],
+  // Tier 2 · 0.10 SOL
+  2: [
+    { name: "Hacker House Pass", icon: "ticket", description: "A seat at the build table, held in your wallet." },
+    { name: "Demo Night Front Row", icon: "ticket", description: "Watch it work live, then break it live." },
+    { name: "Late-Night Build Pass", icon: "ticket", description: "Pizza, power strips, and one more deploy." },
+    { name: "Rollup Workshop Seat", icon: "chip", description: "Learn to delegate, commit, and undelegate in an afternoon." },
+    { name: "Mainnet Meetup Ticket", icon: "ticket", description: "Talks, tacos, and a very loud group chat." },
+  ],
+  // Tier 3 · 0.15 SOL
+  3: [
+    { name: "Mystery Rollup Box", icon: "box", description: "A sealed collectible. It opens when it settles." },
+    { name: "Dev Board Bundle", icon: "chip", description: "A board, a cable, and an idea that will not fit in one weekend." },
+    { name: "Retro Arcade Cabinet", icon: "gamepad", description: "Fully on-chain in spirit. Please stand back from the joystick." },
+    { name: "Moonshot Crate", icon: "rocket", description: "Packed fast, shipped faster, lands wherever the roll says." },
+    { name: "Sealed Validator Crate", icon: "box", description: "Do not shake. Do not read the logs. Just open it." },
+  ],
+};
 
 export type TierKey = "free" | "half" | "quarter" | "none";
 

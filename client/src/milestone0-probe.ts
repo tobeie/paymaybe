@@ -15,6 +15,7 @@
  *   11. [TEE SECURITY] second request_spin on same payment — MUST FAIL (single-spin state machine)
  *   12. [TEE -> L1] commit_and_undelegate_buyer — closes EphemeralPermission, refunds rent, confirms via GetCommitmentSignature
  *   13. [L1] claim_or_sell_shards — claims won cashback + sells 10 Loyalty Shards for instant SOL
+ *   13b.[L1 SECURITY] cancel_spin — idle cancel rejected; a paid-but-unspun checkout is fully refunded
  *   14. [L1 SECURITY + MERCHANT] withdraw_merchant_funds — rejects over-withdrawal (protects shard reserve), succeeds within safe revenue
  *
  * Run:
@@ -528,6 +529,43 @@ async function main() {
   const claimIx = buildInstructionFromIdl(idl, "claim_or_sell_shards", u64LE(sellShards), accountMap);
   const claimSig = await sendTx(l1Conn, payer, claimIx, "claim_or_sell_shards (L1)");
   txLinks["claim_or_sell_shards (L1)"] = explorerUrl(claimSig);
+
+  // STEP 13b: cancel_spin safety valve (L1)
+  console.log("\n1️⃣3️⃣b [L1] cancel_spin: rejected when nothing is paid, refunds a paid-but-unspun checkout...");
+  const cancelIdleIx = buildInstructionFromIdl(idl, "cancel_spin", Buffer.alloc(0), accountMap);
+  await expectTxFailure(l1Conn, payer, cancelIdleIx, "cancel_spin with nothing paid (NothingToCancel)");
+
+  const balanceBeforeCancelTest = await l1Conn.getBalance(payer.publicKey);
+  const payAgainIx = buildInstructionFromIdl(
+    idl,
+    "deposit_checkout",
+    Buffer.concat([Buffer.from([0]), u64LE(20_000_000n)]),
+    accountMap
+  );
+  await sendTx(l1Conn, payer, payAgainIx, "deposit_checkout (to be cancelled)");
+  const cancelIx = buildInstructionFromIdl(idl, "cancel_spin", Buffer.alloc(0), accountMap);
+  const cancelSig = await sendTx(l1Conn, payer, cancelIx, "cancel_spin (refund)");
+  txLinks["cancel_spin (L1)"] = explorerUrl(cancelSig);
+
+  const balanceAfterCancelTest = await l1Conn.getBalance(payer.publicKey);
+  const afterCancelInfo = await l1Conn.getAccountInfo(buyerAccount, "confirmed");
+  if (!afterCancelInfo || afterCancelInfo.data.length < BUYER_ACCOUNT_SIZE) {
+    throw new Error("cancel_spin check failed: BuyerAccount missing after cancel");
+  }
+  const afterCancel = decodeBuyerAccount(afterCancelInfo.data);
+  if (
+    afterCancel.spinState !== "Idle" ||
+    afterCancel.pendingAmount !== 0n ||
+    afterCancel.unsettledEscrowLamports !== 0n ||
+    balanceBeforeCancelTest - balanceAfterCancelTest >= 20_000_000
+  ) {
+    throw new Error(
+      `SECURITY ASSERTION FAILED: cancel_spin did not fully refund (state=${afterCancel.spinState}, pending=${afterCancel.pendingAmount}, net spend=${balanceBeforeCancelTest - balanceAfterCancelTest} lamports)`
+    );
+  }
+  console.log(
+    `   ✅ Paid-but-unspun checkout fully refunded (net cost ${balanceBeforeCancelTest - balanceAfterCancelTest} lamports, fees only)`
+  );
 
   // STEP 14: Merchant withdraw security test (over-withdraw fails; safe withdraw succeeds!)
   console.log("\n1️⃣4️⃣ [L1 MERCHANT] Testing withdraw_merchant_funds (reserve protection + real withdraw)...");

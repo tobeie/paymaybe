@@ -191,7 +191,7 @@ export default function VaultPage() {
                   <span className={`mini-stamp t-${t.key}`}>{t.mini}</span>
                   <b>#{h.receiptNo}</b>
                   <br />
-                  {it.name.toUpperCase()}
+                  {(h.itemName ?? it.name).toUpperCase()}
                   <br />
                   ROLL {formatRoll(h.rollBps)}
                   <br />

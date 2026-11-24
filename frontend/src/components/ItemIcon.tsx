@@ -43,6 +43,38 @@ export function ItemIcon({ icon, className = "tag-icon" }: { icon: ItemIconKey; 
           <path d="M16 26.5l25-10" />
         </>
       )}
+      {icon === "bolt" && <path d="M36 6 16 36h14l-4 22 22-32H34z" />}
+      {icon === "cap" && (
+        <>
+          <path d="M12 38a20 20 0 0 1 40 0z" />
+          <path d="M8 38h48" />
+          <path d="M52 38c6 0 8 3 8 6H40" />
+          <path d="M32 18v-4" />
+        </>
+      )}
+      {icon === "chip" && (
+        <>
+          <rect x="18" y="18" width="28" height="28" rx="3" />
+          <rect x="26" y="26" width="12" height="12" />
+          <path d="M26 10v8M38 10v8M26 46v8M38 46v8M10 26h8M10 38h8M46 26h8M46 38h8" />
+        </>
+      )}
+      {icon === "gamepad" && (
+        <>
+          <path d="M18 22h28a10 10 0 0 1 10 10v6a6 6 0 0 1-10 4l-4-4H22l-4 4A6 6 0 0 1 8 38v-6a10 10 0 0 1 10-10z" />
+          <path d="M20 29v8M16 33h8" />
+          <circle cx="42" cy="31" r="1.6" />
+          <circle cx="47" cy="35" r="1.6" />
+        </>
+      )}
+      {icon === "rocket" && (
+        <>
+          <path d="M32 6c10 6 14 18 12 30H20C18 24 22 12 32 6z" />
+          <circle cx="32" cy="24" r="4" />
+          <path d="M20 36l-8 10 10-2M44 36l8 10-10-2" />
+          <path d="M28 44v8M36 44v8" />
+        </>
+      )}
     </svg>
   );
 }
